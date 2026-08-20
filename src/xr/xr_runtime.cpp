@@ -18,12 +18,24 @@ bool SimulatedXrRuntime::poll(XrInputState& state) {
     return true;
 }
 
+bool SimulatedXrRuntime::present(const VideoFrameView& frame) {
+    if (!initialized_) {
+        return false;
+    }
+    last_presented_frame_ = frame.frame_number;
+    return true;
+}
+
 void SimulatedXrRuntime::shutdown() {
     initialized_ = false;
 }
 
 void SimulatedXrRuntime::set_state(const XrInputState& state) {
     state_ = state;
+}
+
+std::uint64_t SimulatedXrRuntime::last_presented_frame() const noexcept {
+    return last_presented_frame_;
 }
 
 Vec3 rotate_vector(const Quat& q, Vec3 v) noexcept {
