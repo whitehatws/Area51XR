@@ -4,6 +4,9 @@
 #include "area51xr/xr_aim.h"
 #include "area51xr/xr_runtime.h"
 
+#include <cstdint>
+#include <vector>
+
 namespace area51xr {
 
 struct HostTickResult {
@@ -12,6 +15,7 @@ struct HostTickResult {
     bool aim_valid{};
     NormalizedAim aim{};
     bool trigger_down{};
+    bool frame_presented{};
     FrameStatus frame{};
 };
 
@@ -28,6 +32,8 @@ private:
     MameSharedState& shared_;
     AimPlane plane_{};
     NormalizedAim last_aim_{0.5f, 0.5f};
+    std::vector<std::uint8_t> frame_buffer_;
+    std::uint64_t last_presented_frame_{};
     bool initialized_{};
 };
 
