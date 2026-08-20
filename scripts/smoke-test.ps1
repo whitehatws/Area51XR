@@ -4,6 +4,8 @@ param(
 
     [string]$MsysRoot = "C:\msys64",
 
+    [string]$OpenXrSdk = "",
+
     [int]$Jobs = 0
 )
 
@@ -13,11 +15,18 @@ $root = Split-Path -Parent $PSScriptRoot
 $bash = Join-Path $MsysRoot "usr\bin\bash.exe"
 $mameSource = Join-Path $MameRoot "src\mame\atari\jaguar.cpp"
 
+if ([string]::IsNullOrWhiteSpace($OpenXrSdk)) {
+    $OpenXrSdk = Join-Path $root "external\openxr-sdk"
+}
+
 if (-not (Test-Path $bash)) {
     throw "MSYS2 bash not found at '$bash'."
 }
 if (-not (Test-Path $mameSource)) {
     throw "MAME source tree not found at '$MameRoot'."
+}
+if (-not (Test-Path (Join-Path $OpenXrSdk "include\openxr\openxr.h"))) {
+    throw "OpenXR SDK headers not found at '$OpenXrSdk'."
 }
 
 if ($Jobs -le 0) {
@@ -29,12 +38,14 @@ Write-Host "[1/5] Applying Area51XR MAME integration..."
 
 $env:A51XR_ROOT = $root
 $env:A51XR_MAME_ROOT = $MameRoot
+$env:A51XR_OPENXR_SDK = $OpenXrSdk
 
-Write-Host "[2/5] Building Area51XR with MSYS2/UCRT..."
+Write-Host "[2/5] Building Area51XR with MSYS2/UCRT and OpenXR..."
 $hostBuildCommand = @"
 export PATH=/ucrt64/bin:/usr/bin:`$PATH
 root="`$(cygpath -u "`$A51XR_ROOT")"
-cmake -S "`$root" -B "`$root/build-mingw" -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo
+sdk="`$(cygpath -u "`$A51XR_OPENXR_SDK")"
+cmake -S "`$root" -B "`$root/build-mingw" -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo -DA51XR_OPENXR_SDK="`$sdk"
 cmake --build "`$root/build-mingw" -j$Jobs
 "@
 & $bash -lc $hostBuildCommand
@@ -92,4 +103,4 @@ Write-Host ""
 Write-Host "Smoke test passed."
 Write-Host "Area51XR host: $hostExe"
 Write-Host "Patched MAME:     $mameExe"
-Write-Host "Next: launch the live bridge test with your Area 51 game files."
+Write-Host "OpenXR backend:   compiled"
