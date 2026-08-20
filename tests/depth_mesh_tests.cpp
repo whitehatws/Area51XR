@@ -31,9 +31,9 @@ int main() {
     const auto split = area51xr::build_depth_mesh(edge, 2, 2, camera, strict);
     assert(split.indices.empty());
 
-    // Vertex 1 participates only in the first triangle for the 0,1,2 / 2,1,3
-    // winding. Invalidating it should leave the second triangle intact.
-    const std::array<float, 4> invalid{2.0f, 0.0f, 2.0f, 2.0f};
+    // With the mesh winding 0,2,1 / 1,2,3, corner 0 belongs only to the
+    // first triangle. Invalidating it should preserve the second triangle.
+    const std::array<float, 4> invalid{0.0f, 2.0f, 2.0f, 2.0f};
     const auto holes = area51xr::build_depth_mesh(invalid, 2, 2, camera);
     assert(holes.indices.size() == 3);
 
