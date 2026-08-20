@@ -11,6 +11,9 @@ add_library(a51xr_core
     src/core/mame_ipc.cpp
     src/core/mame_adapter.cpp
     src/core/bridge_host.cpp
+    src/xr/xr_runtime.cpp
+    src/xr/xr_aim.cpp
+    src/xr/xr_host.cpp
 )
 target_include_directories(a51xr_core PUBLIC src include)
 
@@ -44,4 +47,16 @@ if(BUILD_TESTING)
     add_executable(area51xr_bridge_host_tests tests/bridge_host_tests.cpp)
     target_link_libraries(area51xr_bridge_host_tests PRIVATE a51xr_core)
     add_test(NAME bridge_host COMMAND area51xr_bridge_host_tests)
+
+    add_executable(area51xr_xr_runtime_tests tests/xr_runtime_tests.cpp)
+    target_link_libraries(area51xr_xr_runtime_tests PRIVATE a51xr_core)
+    add_test(NAME xr_runtime COMMAND area51xr_xr_runtime_tests)
+
+    add_executable(area51xr_xr_aim_tests tests/xr_aim_tests.cpp)
+    target_link_libraries(area51xr_xr_aim_tests PRIVATE a51xr_core)
+    add_test(NAME xr_aim COMMAND area51xr_xr_aim_tests)
+
+    add_executable(area51xr_xr_host_tests tests/xr_host_tests.cpp)
+    target_link_libraries(area51xr_xr_host_tests PRIVATE a51xr_core)
+    add_test(NAME xr_host COMMAND area51xr_xr_host_tests)
 endif()
