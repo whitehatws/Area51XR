@@ -11,6 +11,11 @@ struct PixelCoordinate {
     float y{};
 };
 
+struct NormalizedCoordinate {
+    float x{};
+    float y{};
+};
+
 std::optional<PixelCoordinate> project_world_point(
     Vec3 world_point,
     Vec3 eye_position,
@@ -18,7 +23,7 @@ std::optional<PixelCoordinate> project_world_point(
     std::uint32_t width,
     std::uint32_t height) noexcept;
 
-std::optional<NormalizedAim> reproject_world_point_uv(
+std::optional<NormalizedCoordinate> reproject_world_point_uv(
     Vec3 world_point,
     Vec3 eye_position,
     const CameraIntrinsics& camera,
