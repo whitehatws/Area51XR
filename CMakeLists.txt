@@ -22,6 +22,7 @@ add_library(a51xr_core
     src/reconstruction/depth_reconstruction.cpp
     src/reconstruction/depth_provider.cpp
     src/reconstruction/reconstruction_engine.cpp
+    src/reconstruction/reconstruction_capture.cpp
 )
 target_include_directories(a51xr_core PUBLIC src include)
 
@@ -94,4 +95,8 @@ if(BUILD_TESTING)
     add_executable(area51xr_reconstruction_engine_tests tests/reconstruction_engine_tests.cpp)
     target_link_libraries(area51xr_reconstruction_engine_tests PRIVATE a51xr_core)
     add_test(NAME reconstruction_engine COMMAND area51xr_reconstruction_engine_tests)
+
+    add_executable(area51xr_reconstruction_capture_tests tests/reconstruction_capture_tests.cpp)
+    target_link_libraries(area51xr_reconstruction_capture_tests PRIVATE a51xr_core)
+    add_test(NAME reconstruction_capture COMMAND area51xr_reconstruction_capture_tests)
 endif()
