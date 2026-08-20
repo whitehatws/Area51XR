@@ -8,6 +8,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 add_library(a51xr_core
     src/core/projection.cpp
     src/core/mame_bridge.cpp
+    src/core/mame_ipc.cpp
 )
 target_include_directories(a51xr_core PUBLIC src include)
 
@@ -29,4 +30,8 @@ if(BUILD_TESTING)
     add_executable(area51xr_mame_bridge_tests tests/mame_bridge_tests.cpp)
     target_link_libraries(area51xr_mame_bridge_tests PRIVATE a51xr_core)
     add_test(NAME mame_bridge COMMAND area51xr_mame_bridge_tests)
+
+    add_executable(area51xr_mame_ipc_tests tests/mame_ipc_tests.cpp)
+    target_link_libraries(area51xr_mame_ipc_tests PRIVATE a51xr_core)
+    add_test(NAME mame_ipc COMMAND area51xr_mame_ipc_tests)
 endif()
