@@ -18,6 +18,11 @@ struct MameSharedState {
     std::uint8_t frame_pixels[kMameFrameBufferBytes]{};
 };
 
+static_assert(sizeof(MameGunState) == 32);
+static_assert(sizeof(MameFrameHeader) == 48);
+static_assert(offsetof(MameSharedState, gun) == 8);
+static_assert(offsetof(MameSharedState, frame) == 40);
+static_assert(offsetof(MameSharedState, frame_pixels) == 88);
 static_assert(sizeof(MameSharedState::frame_pixels) == kMameFrameBufferBytes);
 
 class MameIpc {
