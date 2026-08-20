@@ -12,7 +12,7 @@
 
 namespace area51xr_mame {
 
-constexpr std::uint32_t kProtocolVersion = 1;
+constexpr std::uint32_t kProtocolVersion = 2;
 constexpr std::size_t kFrameBufferBytes = 760u * 512u * 4u;
 
 struct GunState {
@@ -28,6 +28,7 @@ struct GunState {
 struct FrameHeader {
     std::uint32_t protocol_version;
     std::uint32_t padding0;
+    std::uint64_t sequence;
     std::uint64_t frame_number;
     std::uint32_t width;
     std::uint32_t height;
@@ -46,10 +47,10 @@ struct SharedState {
 };
 
 static_assert(sizeof(GunState) == 32);
-static_assert(sizeof(FrameHeader) == 48);
+static_assert(sizeof(FrameHeader) == 56);
 static_assert(offsetof(SharedState, gun) == 8);
 static_assert(offsetof(SharedState, frame) == 40);
-static_assert(offsetof(SharedState, frame_pixels) == 88);
+static_assert(offsetof(SharedState, frame_pixels) == 96);
 
 class Bridge {
 public:
@@ -70,7 +71,24 @@ public:
             return nullptr;
         if (state_->protocol_version != kProtocolVersion || state_->gun.protocol_version != kProtocolVersion)
             return nullptr;
-        return &state_->gun;
+
+#ifdef _WIN32
+        for (int attempt = 0; attempt < 4; ++attempt)
+        {
+            const LONG64 before = InterlockedCompareExchange64(
+                reinterpret_cast<volatile LONG64*>(&state_->gun.sequence), 0, 0);
+            if (before & 1)
+                continue;
+
+            gun_snapshot_ = state_->gun;
+
+            const LONG64 after = InterlockedCompareExchange64(
+                reinterpret_cast<volatile LONG64*>(&state_->gun.sequence), 0, 0);
+            if (before == after && !(after & 1))
+                return &gun_snapshot_;
+        }
+#endif
+        return nullptr;
     }
 
     template <typename Bitmap>
@@ -86,18 +104,24 @@ public:
         if (payload_bytes > kFrameBufferBytes)
             return;
 
+#ifdef _WIN32
+        InterlockedIncrement64(reinterpret_cast<volatile LONG64*>(&state_->frame.sequence));
+#endif
+        state_->frame.protocol_version = kProtocolVersion;
+        state_->frame.frame_number = ++frame_number_;
+        state_->frame.width = width;
+        state_->frame.height = height;
+        state_->frame.stride_bytes = static_cast<std::uint32_t>(row_bytes);
+        state_->frame.pixel_format = 1; // MAME bitmap_rgb32 native 32-bit pixels
+        state_->frame.presentation_time_ns = 0;
+        state_->frame.payload_bytes = payload_bytes;
+
         for (std::uint32_t y = 0; y < height; ++y)
             std::memcpy(state_->frame_pixels + static_cast<std::size_t>(y) * row_bytes, &bitmap.pix(y), row_bytes);
 
-        FrameHeader header{};
-        header.protocol_version = kProtocolVersion;
-        header.frame_number = ++frame_number_;
-        header.width = width;
-        header.height = height;
-        header.stride_bytes = static_cast<std::uint32_t>(row_bytes);
-        header.pixel_format = 1; // MAME bitmap_rgb32 native 32-bit pixels
-        header.payload_bytes = payload_bytes;
-        state_->frame = header;
+#ifdef _WIN32
+        InterlockedIncrement64(reinterpret_cast<volatile LONG64*>(&state_->frame.sequence));
+#endif
     }
 
 private:
@@ -109,7 +133,7 @@ private:
         if (state_)
             return true;
 
-        mapping_ = OpenFileMappingW(FILE_MAP_ALL_ACCESS, FALSE, L"Local\\Area51XR_MAME_v1");
+        mapping_ = OpenFileMappingW(FILE_MAP_ALL_ACCESS, FALSE, L"Local\\Area51XR_MAME_v2");
         if (!mapping_)
             return false;
 
@@ -151,6 +175,7 @@ private:
     HANDLE mapping_{};
 #endif
     SharedState* state_{};
+    GunState gun_snapshot_{};
     std::uint64_t frame_number_{};
 };
 
