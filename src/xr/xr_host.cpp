@@ -27,6 +27,19 @@ HostTickResult XrHost::tick() {
     result.session_running = input.session_running;
     result.trigger_down = input.trigger_down;
 
+    if (result.frame.frame_number != 0 && result.frame.frame_number != last_copied_frame_) {
+        MameFrameHeader header{};
+        if (copy_latest_frame(shared_, header, frame_buffer_)) {
+            cached_frame_ = header;
+            last_copied_frame_ = header.frame_number;
+            has_frame_ = true;
+            if (header.width != 0 && header.height != 0) {
+                plane_.height = plane_.width *
+                    static_cast<float>(header.height) / static_cast<float>(header.width);
+            }
+        }
+    }
+
     if (input.session_running && input.pose_valid) {
         if (const auto projected = project_aim_to_plane(input.aim, plane_)) {
             last_aim_ = *projected;
@@ -44,15 +57,6 @@ HostTickResult XrHost::tick() {
         result.aim.x,
         result.aim.y,
         result.session_running && input.pose_valid && result.trigger_down);
-
-    if (result.frame.frame_number != 0 && result.frame.frame_number != last_copied_frame_) {
-        MameFrameHeader header{};
-        if (copy_latest_frame(shared_, header, frame_buffer_)) {
-            cached_frame_ = header;
-            last_copied_frame_ = header.frame_number;
-            has_frame_ = true;
-        }
-    }
 
     if (result.session_running) {
         VideoFrameView frame{};
