@@ -33,14 +33,14 @@ if ($Jobs -le 0) {
     $Jobs = [Math]::Max(2, [Environment]::ProcessorCount)
 }
 
-Write-Host "[1/5] Applying Area51XR MAME integration..."
+Write-Host "[1/6] Applying Area51XR MAME integration..."
 & (Join-Path $PSScriptRoot "apply-mame-patch.ps1") -MameRoot $MameRoot
 
 $env:A51XR_ROOT = $root
 $env:A51XR_MAME_ROOT = $MameRoot
 $env:A51XR_OPENXR_SDK = $OpenXrSdk
 
-Write-Host "[2/5] Building Area51XR with MSYS2/UCRT and OpenXR..."
+Write-Host "[2/6] Building Area51XR with MSYS2/UCRT and OpenXR..."
 $hostBuildCommand = @"
 export PATH=/ucrt64/bin:/usr/bin:`$PATH
 root="`$(cygpath -u "`$A51XR_ROOT")"
@@ -53,7 +53,7 @@ if ($LASTEXITCODE -ne 0) {
     throw "Area51XR build failed with exit code $LASTEXITCODE."
 }
 
-Write-Host "[3/5] Running Area51XR tests..."
+Write-Host "[3/6] Running Area51XR tests..."
 $hostTestCommand = @"
 export PATH=/ucrt64/bin:/usr/bin:`$PATH
 root="`$(cygpath -u "`$A51XR_ROOT")"
@@ -64,7 +64,27 @@ if ($LASTEXITCODE -ne 0) {
     throw "Area51XR tests failed with exit code $LASTEXITCODE."
 }
 
-Write-Host "[4/5] Building targeted MAME CoJag subtarget..."
+Write-Host "[4/6] Building Khronos OpenXR loader DLL..."
+$loaderBuildCommand = @"
+export PATH=/ucrt64/bin:/usr/bin:`$PATH
+root="`$(cygpath -u "`$A51XR_ROOT")"
+sdk="`$(cygpath -u "`$A51XR_OPENXR_SDK")"
+cmake -S "`$sdk" -B "`$root/external/openxr-build" -G Ninja -DCMAKE_BUILD_TYPE=Release -DDYNAMIC_LOADER=ON -DBUILD_TESTING=OFF
+cmake --build "`$root/external/openxr-build" --target openxr_loader -j$Jobs
+"@
+& $bash -lc $loaderBuildCommand
+if ($LASTEXITCODE -ne 0) {
+    throw "OpenXR loader build failed with exit code $LASTEXITCODE."
+}
+
+$loaderDll = Get-ChildItem -Path (Join-Path $root "external\openxr-build") -Filter "openxr_loader.dll" -File -Recurse -ErrorAction SilentlyContinue |
+    Select-Object -First 1 -ExpandProperty FullName
+if (-not $loaderDll) {
+    throw "OpenXR loader build completed but openxr_loader.dll was not found."
+}
+Copy-Item $loaderDll (Join-Path $root "build-mingw\openxr_loader.dll") -Force
+
+Write-Host "[5/6] Building targeted MAME CoJag subtarget..."
 $mameBuildCommand = @"
 export PATH=/ucrt64/bin:/usr/bin:`$PATH
 cd "`$(cygpath -u "`$A51XR_MAME_ROOT")"
@@ -75,7 +95,7 @@ if ($LASTEXITCODE -ne 0) {
     throw "MAME build failed with exit code $LASTEXITCODE."
 }
 
-Write-Host "[5/5] Locating and validating the MAME executable..."
+Write-Host "[6/6] Locating and validating the MAME executable..."
 $candidates = @(
     (Join-Path $MameRoot "mamearea51xr.exe"),
     (Join-Path $MameRoot "area51xr.exe")
@@ -96,11 +116,11 @@ if ($LASTEXITCODE -ne 0) {
 
 $hostExe = Join-Path $root "build-mingw\area51xr.exe"
 if (-not (Test-Path $hostExe)) {
-    throw "Area51XR diagnostic host was not found at '$hostExe'."
+    throw "Area51XR host was not found at '$hostExe'."
 }
 
 Write-Host ""
 Write-Host "Smoke test passed."
-Write-Host "Area51XR host: $hostExe"
-Write-Host "Patched MAME:     $mameExe"
-Write-Host "OpenXR backend:   compiled"
+Write-Host "Area51XR host:  $hostExe"
+Write-Host "Patched MAME:  $mameExe"
+Write-Host "OpenXR loader: $(Join-Path $root 'build-mingw\openxr_loader.dll')"
