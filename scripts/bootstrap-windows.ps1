@@ -27,10 +27,9 @@ if (-not (Test-Path $bash)) {
     }
 }
 
-Write-Host "Installing/updating the local build packages..."
+Write-Host "Installing the local build packages..."
 $packageCommand = @'
 export PATH=/ucrt64/bin:/usr/bin:$PATH
-pacman -Sy --noconfirm
 pacman -S --needed --noconfirm git make mingw-w64-ucrt-x86_64-gcc mingw-w64-ucrt-x86_64-python mingw-w64-ucrt-x86_64-cmake mingw-w64-ucrt-x86_64-ninja mingw-w64-ucrt-x86_64-lld
 '@
 & $bash -lc $packageCommand
