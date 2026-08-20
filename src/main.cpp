@@ -99,6 +99,7 @@ int run_xr_bridge() {
             std::cout << "frame=" << tick.frame.frame_number
                       << " size=" << tick.frame.width << 'x' << tick.frame.height
                       << " aim=" << tick.aim.x << ',' << tick.aim.y
+                      << " aim_valid=" << (tick.aim_valid ? 1 : 0)
                       << " trigger=" << (tick.trigger_down ? "down" : "up")
                       << std::endl;
         }
