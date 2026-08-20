@@ -33,7 +33,9 @@ private:
     AimPlane plane_{};
     NormalizedAim last_aim_{0.5f, 0.5f};
     std::vector<std::uint8_t> frame_buffer_;
-    std::uint64_t last_presented_frame_{};
+    MameFrameHeader cached_frame_{};
+    std::uint64_t last_copied_frame_{};
+    bool has_frame_{};
     bool initialized_{};
 };
 
