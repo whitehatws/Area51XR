@@ -18,15 +18,28 @@ void write_gun_state(MameSharedState& shared, float aim_x, float aim_y, bool tri
 }
 
 FrameStatus read_frame_status(const MameSharedState& shared) noexcept {
-    FrameStatus status{};
-    if (shared.frame.protocol_version != kMameBridgeProtocolVersion) {
-        return status;
+    std::atomic_ref<std::uint64_t> sequence(const_cast<std::uint64_t&>(shared.frame.sequence));
+    for (int attempt = 0; attempt < 4; ++attempt) {
+        const std::uint64_t before = sequence.load(std::memory_order_acquire);
+        if (before & 1u) {
+            continue;
+        }
+
+        FrameStatus status{};
+        if (shared.frame.protocol_version != kMameBridgeProtocolVersion) {
+            return status;
+        }
+        status.frame_number = shared.frame.frame_number;
+        status.width = shared.frame.width;
+        status.height = shared.frame.height;
+        status.payload_bytes = shared.frame.payload_bytes;
+
+        const std::uint64_t after = sequence.load(std::memory_order_acquire);
+        if (before == after && !(after & 1u)) {
+            return status;
+        }
     }
-    status.frame_number = shared.frame.frame_number;
-    status.width = shared.frame.width;
-    status.height = shared.frame.height;
-    status.payload_bytes = shared.frame.payload_bytes;
-    return status;
+    return {};
 }
 
 }  // namespace area51xr
