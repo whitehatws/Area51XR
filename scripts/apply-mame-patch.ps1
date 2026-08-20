@@ -17,21 +17,23 @@ if (-not (Test-Path $jaguarVideo)) {
     throw "MAME source tree not found at '$MameRoot'. Expected $jaguarVideo"
 }
 
-$text = Get-Content -Raw -Path $jaguarVideo
+$raw = Get-Content -Raw -Path $jaguarVideo
+$newline = if ($raw.Contains("`r`n")) { "`r`n" } else { "`n" }
+$text = $raw.Replace("`r`n", "`n")
 
 $includeOriginal = @'
 #include "jaguar.h"
 #include "jagblit.h"
 
 #include "endianness.h"
-'@
+'@.Replace("`r`n", "`n")
 $includePatched = @'
 #include "jaguar.h"
 #include "jagblit.h"
 #include "area51xr_mame_bridge.h"
 
 #include "endianness.h"
-'@
+'@.Replace("`r`n", "`n")
 
 $gunOriginal = @'
 		case 1:
@@ -40,7 +42,7 @@ $gunOriginal = @'
 
 		case 2:
 			return ioport("IN3")->read();
-'@
+'@.Replace("`r`n", "`n")
 $gunPatched = @'
 		case 1:
 			if (const auto *const xr_gun = area51xr_mame::gun_state())
@@ -68,25 +70,32 @@ $gunPatched = @'
 			}
 			return input;
 		}
-'@
+'@.Replace("`r`n", "`n")
 
 $screenOriginal = @'
 	/* render the object list */
 	copybitmap(bitmap, m_screen_bitmap, 0, 0, 0, 0, cliprect);
 	return 0;
-'@
+'@.Replace("`r`n", "`n")
 $screenPatched = @'
 	/* render the object list */
 	copybitmap(bitmap, m_screen_bitmap, 0, 0, 0, 0, cliprect);
 	area51xr_mame::publish_bitmap(m_screen_bitmap);
 	return 0;
-'@
+'@.Replace("`r`n", "`n")
 
 function Replace-Required([string]$Source, [string]$From, [string]$To, [string]$Label) {
     if (-not $Source.Contains($From)) {
         throw "Could not find expected MAME source block: $Label. The MAME source may have changed."
     }
     return $Source.Replace($From, $To)
+}
+
+function Write-PreservedNewlines([string]$Content) {
+    if ($newline -eq "`r`n") {
+        $Content = $Content.Replace("`n", "`r`n")
+    }
+    [System.IO.File]::WriteAllText($jaguarVideo, $Content)
 }
 
 if ($Revert) {
@@ -99,7 +108,7 @@ if ($Revert) {
     $text = Replace-Required $text $includePatched $includeOriginal "Area51XR include"
     $text = Replace-Required $text $gunPatched $gunOriginal "Area51XR gun hook"
     $text = Replace-Required $text $screenPatched $screenOriginal "Area51XR frame hook"
-    Set-Content -Path $jaguarVideo -Value $text -NoNewline
+    Write-PreservedNewlines $text
     Remove-Item $targetBridge -ErrorAction SilentlyContinue
     Write-Host "Area51XR MAME integration reverted."
     exit 0
@@ -116,5 +125,5 @@ $text = Replace-Required $text $gunOriginal $gunPatched "CoJag Player 1 gun inpu
 $text = Replace-Required $text $screenOriginal $screenPatched "Jaguar screen update block"
 
 Copy-Item $bridge $targetBridge -Force
-Set-Content -Path $jaguarVideo -Value $text -NoNewline
+Write-PreservedNewlines $text
 Write-Host "Area51XR MAME integration applied."
