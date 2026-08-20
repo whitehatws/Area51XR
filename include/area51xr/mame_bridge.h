@@ -4,7 +4,7 @@
 
 namespace area51xr {
 
-constexpr std::uint32_t kMameBridgeProtocolVersion = 1;
+constexpr std::uint32_t kMameBridgeProtocolVersion = 2;
 
 struct MameGunState {
     std::uint32_t protocol_version{kMameBridgeProtocolVersion};
@@ -17,6 +17,7 @@ struct MameGunState {
 
 struct MameFrameHeader {
     std::uint32_t protocol_version{kMameBridgeProtocolVersion};
+    std::uint64_t sequence{};
     std::uint64_t frame_number{};
     std::uint32_t width{};
     std::uint32_t height{};
