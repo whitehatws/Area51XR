@@ -32,6 +32,12 @@ struct CoJagGunRegisters {
     std::uint32_t packed{};
 };
 
-CoJagGunRegisters encode_cojag_gun(float normalized_x, float normalized_y);
+CoJagGunRegisters encode_cojag_gun(
+    float normalized_x,
+    float normalized_y,
+    std::uint32_t visible_width = 320,
+    std::uint32_t visible_height = 240,
+    std::uint32_t visible_left = 0,
+    std::uint32_t visible_top = 0);
 
 }  // namespace area51xr
