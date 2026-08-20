@@ -5,6 +5,8 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
+set(A51XR_OPENXR_SDK "" CACHE PATH "Path to Khronos OpenXR-SDK checkout")
+
 add_library(a51xr_core
     src/core/projection.cpp
     src/core/mame_bridge.cpp
@@ -16,6 +18,13 @@ add_library(a51xr_core
     src/xr/xr_host.cpp
 )
 target_include_directories(a51xr_core PUBLIC src include)
+
+if(WIN32 AND A51XR_OPENXR_SDK AND EXISTS "${A51XR_OPENXR_SDK}/include/openxr/openxr.h")
+    target_sources(a51xr_core PRIVATE src/xr/openxr_runtime_win32.cpp)
+    target_include_directories(a51xr_core PRIVATE "${A51XR_OPENXR_SDK}/include")
+    target_compile_definitions(a51xr_core PUBLIC A51XR_HAS_OPENXR=1)
+    target_link_libraries(a51xr_core PRIVATE d3d11 dxgi)
+endif()
 
 if(MSVC)
     target_compile_options(a51xr_core PRIVATE /W4 /permissive-)
