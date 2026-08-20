@@ -7,8 +7,9 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 add_library(a51xr_core
     src/core/projection.cpp
+    src/core/mame_bridge.cpp
 )
-target_include_directories(a51xr_core PUBLIC src)
+target_include_directories(a51xr_core PUBLIC src include)
 
 if(MSVC)
     target_compile_options(a51xr_core PRIVATE /W4 /permissive-)
@@ -24,4 +25,8 @@ if(BUILD_TESTING)
     add_executable(area51xr_tests tests/projection_tests.cpp)
     target_link_libraries(area51xr_tests PRIVATE a51xr_core)
     add_test(NAME projection COMMAND area51xr_tests)
+
+    add_executable(area51xr_mame_bridge_tests tests/mame_bridge_tests.cpp)
+    target_link_libraries(area51xr_mame_bridge_tests PRIVATE a51xr_core)
+    add_test(NAME mame_bridge COMMAND area51xr_mame_bridge_tests)
 endif()
