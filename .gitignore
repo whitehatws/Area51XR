@@ -1,0 +1,13 @@
+/build/
+/.vs/
+/.vscode/
+*.user
+*.suo
+*.log
+
+# Original game files and captures never belong in source control.
+roms/
+game/
+captures/
+*.chd
+*.zip
