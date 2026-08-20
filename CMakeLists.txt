@@ -19,6 +19,7 @@ add_library(a51xr_core
     src/reconstruction/depth_mesh.cpp
     src/reconstruction/reprojection.cpp
     src/reconstruction/depth_stabilizer.cpp
+    src/reconstruction/depth_reconstruction.cpp
 )
 target_include_directories(a51xr_core PUBLIC src include)
 
@@ -83,4 +84,8 @@ if(BUILD_TESTING)
     add_executable(area51xr_depth_stabilizer_tests tests/depth_stabilizer_tests.cpp)
     target_link_libraries(area51xr_depth_stabilizer_tests PRIVATE a51xr_core)
     add_test(NAME depth_stabilizer COMMAND area51xr_depth_stabilizer_tests)
+
+    add_executable(area51xr_depth_reconstruction_tests tests/depth_reconstruction_tests.cpp)
+    target_link_libraries(area51xr_depth_reconstruction_tests PRIVATE a51xr_core)
+    add_test(NAME depth_reconstruction COMMAND area51xr_depth_reconstruction_tests)
 endif()
