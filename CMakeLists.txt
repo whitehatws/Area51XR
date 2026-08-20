@@ -16,6 +16,8 @@ add_library(a51xr_core
     src/xr/xr_runtime.cpp
     src/xr/xr_aim.cpp
     src/xr/xr_host.cpp
+    src/reconstruction/depth_mesh.cpp
+    src/reconstruction/reprojection.cpp
 )
 target_include_directories(a51xr_core PUBLIC src include)
 
@@ -68,4 +70,12 @@ if(BUILD_TESTING)
     add_executable(area51xr_xr_host_tests tests/xr_host_tests.cpp)
     target_link_libraries(area51xr_xr_host_tests PRIVATE a51xr_core)
     add_test(NAME xr_host COMMAND area51xr_xr_host_tests)
+
+    add_executable(area51xr_depth_mesh_tests tests/depth_mesh_tests.cpp)
+    target_link_libraries(area51xr_depth_mesh_tests PRIVATE a51xr_core)
+    add_test(NAME depth_mesh COMMAND area51xr_depth_mesh_tests)
+
+    add_executable(area51xr_reprojection_tests tests/reprojection_tests.cpp)
+    target_link_libraries(area51xr_reprojection_tests PRIVATE a51xr_core)
+    add_test(NAME reprojection COMMAND area51xr_reprojection_tests)
 endif()
