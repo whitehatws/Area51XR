@@ -19,10 +19,10 @@ struct MameSharedState {
 };
 
 static_assert(sizeof(MameGunState) == 32);
-static_assert(sizeof(MameFrameHeader) == 48);
+static_assert(sizeof(MameFrameHeader) == 56);
 static_assert(offsetof(MameSharedState, gun) == 8);
 static_assert(offsetof(MameSharedState, frame) == 40);
-static_assert(offsetof(MameSharedState, frame_pixels) == 88);
+static_assert(offsetof(MameSharedState, frame_pixels) == 96);
 static_assert(sizeof(MameSharedState::frame_pixels) == kMameFrameBufferBytes);
 
 class MameIpc {
@@ -50,5 +50,10 @@ bool publish_frame(
     MameSharedState& shared,
     const MameFrameHeader& header,
     std::span<const std::uint8_t> pixels);
+
+bool copy_latest_frame(
+    const MameSharedState& shared,
+    MameFrameHeader& header,
+    std::span<std::uint8_t> destination) noexcept;
 
 }  // namespace area51xr
