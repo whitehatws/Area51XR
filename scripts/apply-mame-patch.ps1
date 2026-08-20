@@ -80,7 +80,7 @@ $screenOriginal = @'
 $screenPatched = @'
 	/* render the object list */
 	copybitmap(bitmap, m_screen_bitmap, 0, 0, 0, 0, cliprect);
-	area51xr_mame::publish_bitmap(m_screen_bitmap);
+	area51xr_mame::publish_bitmap(bitmap, cliprect);
 	return 0;
 '@.Replace("`r`n", "`n")
 
