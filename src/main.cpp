@@ -1,5 +1,10 @@
 #include "area51xr/bridge_host.h"
+#include "area51xr/xr_host.h"
 #include "core/projection.hpp"
+
+#ifdef A51XR_HAS_OPENXR
+#include "area51xr/openxr_runtime.h"
+#endif
 
 #include <charconv>
 #include <chrono>
@@ -23,11 +28,14 @@ std::optional<double> parse_number(std::string_view value) {
 
 void print_usage() {
     std::cout
-        << "Area51XR diagnostic host\n"
+        << "Area51XR host\n"
         << "Usage:\n"
         << "  area51xr --version\n"
         << "  area51xr --simulate-gun <x> <y>\n"
         << "  area51xr --bridge <x> <y> [--fire]\n"
+#ifdef A51XR_HAS_OPENXR
+        << "  area51xr --xr-bridge\n"
+#endif
         << "\n"
         << "Coordinates are normalized to [0, 1].\n";
 }
@@ -57,13 +65,63 @@ int run_bridge(float x, float y, bool fire) {
     }
 }
 
+#ifdef A51XR_HAS_OPENXR
+int run_xr_bridge() {
+    area51xr::MameIpc ipc;
+    if (!ipc.create()) {
+        std::cerr << "failed to create MAME bridge\n";
+        return 4;
+    }
+
+    area51xr::OpenXrRuntime runtime;
+    area51xr::XrHost host(runtime, *ipc.state());
+    if (!host.initialize()) {
+        std::cerr << "OpenXR initialization failed: " << runtime.last_error() << std::endl;
+        return 5;
+    }
+
+    std::cout << "OpenXR bridge initialized. Waiting for runtime session and MAME frames." << std::endl;
+    std::uint64_t last_frame = 0;
+    bool last_running = false;
+    for (;;) {
+        const auto tick = host.tick();
+        if (!tick.runtime_ok) {
+            std::cerr << "OpenXR runtime error: " << runtime.last_error() << std::endl;
+            host.shutdown();
+            return 6;
+        }
+        if (tick.session_running != last_running) {
+            last_running = tick.session_running;
+            std::cout << "xr_session=" << (last_running ? "running" : "waiting") << std::endl;
+        }
+        if (tick.frame.frame_number != 0 && tick.frame.frame_number != last_frame) {
+            last_frame = tick.frame.frame_number;
+            std::cout << "frame=" << tick.frame.frame_number
+                      << " size=" << tick.frame.width << 'x' << tick.frame.height
+                      << " aim=" << tick.aim.x << ',' << tick.aim.y
+                      << " trigger=" << (tick.trigger_down ? "down" : "up")
+                      << std::endl;
+        }
+        if (!tick.session_running) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(50));
+        }
+    }
+}
+#endif
+
 } // namespace
 
 int main(int argc, char** argv) {
     if (argc == 2 && std::string_view{argv[1]} == "--version") {
-        std::cout << "Area51XR 0.1.0\n";
+        std::cout << "Area51XR 0.2.0\n";
         return 0;
     }
+
+#ifdef A51XR_HAS_OPENXR
+    if (argc == 2 && std::string_view{argv[1]} == "--xr-bridge") {
+        return run_xr_bridge();
+    }
+#endif
 
     if (argc == 4 && std::string_view{argv[1]} == "--simulate-gun") {
         const auto x = parse_number(argv[2]);
