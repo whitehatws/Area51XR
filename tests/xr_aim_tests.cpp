@@ -17,7 +17,7 @@ int main() {
     assert(near(center_hit->y, 0.5f));
 
     area51xr::Pose left{};
-    left.position = {-0.4f, 0.0f, 0.0f};
+    left.position = {-0.35f, 0.0f, 0.0f};
     const auto left_hit = area51xr::project_aim_to_plane(left, plane);
     assert(left_hit);
     assert(near(left_hit->x, 0.25f));
