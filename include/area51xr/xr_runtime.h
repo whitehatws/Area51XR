@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <span>
 
 namespace area51xr {
 
@@ -31,11 +32,21 @@ struct XrInputState {
     std::uint64_t sample_number{};
 };
 
+struct VideoFrameView {
+    std::uint64_t frame_number{};
+    std::uint32_t width{};
+    std::uint32_t height{};
+    std::uint32_t stride_bytes{};
+    std::uint32_t pixel_format{};
+    std::span<const std::uint8_t> pixels{};
+};
+
 class XrRuntime {
 public:
     virtual ~XrRuntime() = default;
     virtual bool initialize() = 0;
     virtual bool poll(XrInputState& state) = 0;
+    virtual bool present(const VideoFrameView& frame) = 0;
     virtual void shutdown() = 0;
 };
 
@@ -45,12 +56,15 @@ public:
 
     bool initialize() override;
     bool poll(XrInputState& state) override;
+    bool present(const VideoFrameView& frame) override;
     void shutdown() override;
 
     void set_state(const XrInputState& state);
+    [[nodiscard]] std::uint64_t last_presented_frame() const noexcept;
 
 private:
     XrInputState state_{};
+    std::uint64_t last_presented_frame_{};
     bool initialized_{};
 };
 
