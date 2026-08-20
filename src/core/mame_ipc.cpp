@@ -1,6 +1,7 @@
 #include "area51xr/mame_ipc.h"
 
 #include <algorithm>
+#include <atomic>
 #include <cstring>
 
 #ifdef _WIN32
@@ -11,7 +12,7 @@
 namespace area51xr {
 namespace {
 
-constexpr const wchar_t* kMappingName = L"Local\\Area51XR_MAME_v1";
+constexpr const wchar_t* kMappingName = L"Local\\Area51XR_MAME_v2";
 
 }  // namespace
 
@@ -109,9 +110,51 @@ bool publish_frame(
         return false;
     }
 
+    std::atomic_ref<std::uint64_t> sequence(shared.frame.sequence);
+    sequence.fetch_add(1, std::memory_order_acq_rel);
+
+    shared.frame.protocol_version = header.protocol_version;
+    shared.frame.frame_number = header.frame_number;
+    shared.frame.width = header.width;
+    shared.frame.height = header.height;
+    shared.frame.stride_bytes = header.stride_bytes;
+    shared.frame.pixel_format = header.pixel_format;
+    shared.frame.presentation_time_ns = header.presentation_time_ns;
+    shared.frame.payload_bytes = header.payload_bytes;
     std::copy(pixels.begin(), pixels.end(), shared.frame_pixels);
-    shared.frame = header;
+
+    sequence.fetch_add(1, std::memory_order_release);
     return true;
+}
+
+bool copy_latest_frame(
+    const MameSharedState& shared,
+    MameFrameHeader& header,
+    std::span<std::uint8_t> destination) noexcept {
+    std::atomic_ref<std::uint64_t> sequence(const_cast<std::uint64_t&>(shared.frame.sequence));
+
+    for (int attempt = 0; attempt < 4; ++attempt) {
+        const std::uint64_t before = sequence.load(std::memory_order_acquire);
+        if (before & 1u) {
+            continue;
+        }
+
+        MameFrameHeader candidate = shared.frame;
+        if (candidate.protocol_version != kMameBridgeProtocolVersion ||
+            candidate.payload_bytes > destination.size() ||
+            candidate.payload_bytes > kMameFrameBufferBytes) {
+            return false;
+        }
+
+        std::copy_n(shared.frame_pixels, static_cast<std::size_t>(candidate.payload_bytes), destination.begin());
+        const std::uint64_t after = sequence.load(std::memory_order_acquire);
+        if (before == after && !(after & 1u)) {
+            candidate.sequence = after;
+            header = candidate;
+            return true;
+        }
+    }
+    return false;
 }
 
 }  // namespace area51xr
