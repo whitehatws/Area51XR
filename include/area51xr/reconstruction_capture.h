@@ -25,6 +25,6 @@ std::vector<std::uint8_t> encode_reconstruction_capture(
 
 bool decode_reconstruction_capture(
     std::span<const std::uint8_t> bytes,
-    ReconstructionCapture& output) noexcept;
+    ReconstructionCapture& output);
 
 } // namespace area51xr
