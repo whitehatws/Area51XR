@@ -91,14 +91,14 @@ public:
         return nullptr;
     }
 
-    template <typename Bitmap>
-    void publish_bitmap(const Bitmap& bitmap)
+    template <typename Bitmap, typename Rect>
+    void publish_bitmap(const Bitmap& bitmap, const Rect& visible)
     {
         if (!ensure_open())
             return;
 
-        const std::uint32_t width = static_cast<std::uint32_t>(bitmap.width());
-        const std::uint32_t height = static_cast<std::uint32_t>(bitmap.height());
+        const std::uint32_t width = static_cast<std::uint32_t>(visible.width());
+        const std::uint32_t height = static_cast<std::uint32_t>(visible.height());
         const std::size_t row_bytes = static_cast<std::size_t>(width) * sizeof(std::uint32_t);
         const std::size_t payload_bytes = row_bytes * height;
         if (payload_bytes > kFrameBufferBytes)
@@ -112,12 +112,19 @@ public:
         state_->frame.width = width;
         state_->frame.height = height;
         state_->frame.stride_bytes = static_cast<std::uint32_t>(row_bytes);
-        state_->frame.pixel_format = 1; // MAME bitmap_rgb32 native 32-bit pixels
+        state_->frame.pixel_format = 1;
         state_->frame.presentation_time_ns = 0;
         state_->frame.payload_bytes = payload_bytes;
 
-        for (std::uint32_t y = 0; y < height; ++y)
-            std::memcpy(state_->frame_pixels + static_cast<std::size_t>(y) * row_bytes, &bitmap.pix(y), row_bytes);
+        const int left = visible.left();
+        for (std::uint32_t row = 0; row < height; ++row)
+        {
+            const int y = visible.top() + static_cast<int>(row);
+            std::memcpy(
+                state_->frame_pixels + static_cast<std::size_t>(row) * row_bytes,
+                &bitmap.pix(y, left),
+                row_bytes);
+        }
 
 #ifdef _WIN32
         InterlockedIncrement64(reinterpret_cast<volatile LONG64*>(&state_->frame.sequence));
@@ -184,10 +191,10 @@ inline const GunState* gun_state()
     return Bridge::instance().gun();
 }
 
-template <typename Bitmap>
-inline void publish_bitmap(const Bitmap& bitmap)
+template <typename Bitmap, typename Rect>
+inline void publish_bitmap(const Bitmap& bitmap, const Rect& visible)
 {
-    Bridge::instance().publish_bitmap(bitmap);
+    Bridge::instance().publish_bitmap(bitmap, visible);
 }
 
 inline std::uint8_t normalized_to_mame_axis(float value)
