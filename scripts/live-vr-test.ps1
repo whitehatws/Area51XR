@@ -62,7 +62,7 @@ try {
     $deadline = (Get-Date).AddSeconds($DurationSeconds)
     $sessionSeen = $false
     $frameSeen = $false
-    $aimSeen = $false
+    $trackedAimSeen = $false
 
     while ((Get-Date) -lt $deadline) {
         Start-Sleep -Milliseconds 400
@@ -83,16 +83,16 @@ try {
         if ($hostText -match "frame=(\d+) size=(\d+)x(\d+)") {
             $frameSeen = $true
         }
-        if ($hostText -match "aim=([0-9.]+),([0-9.]+)") {
-            $aimSeen = $true
+        if ($hostText -match "aim=([0-9.]+),([0-9.]+) aim_valid=1") {
+            $trackedAimSeen = $true
         }
 
-        if ($sessionSeen -and $frameSeen -and $aimSeen) {
+        if ($sessionSeen -and $frameSeen -and $trackedAimSeen) {
             $result = @(
                 "LIVE VR ACCEPTANCE TEST: PASS",
                 "OpenXR session: running",
                 "MAME framebuffer: detected",
-                "Controller aim samples: detected",
+                "Tracked controller aim: detected",
                 "Logs: $logDir"
             ) -join [Environment]::NewLine
             Set-Content -Path $resultFile -Value $result
@@ -104,7 +104,7 @@ try {
     $missing = @()
     if (-not $sessionSeen) { $missing += "OpenXR session" }
     if (-not $frameSeen) { $missing += "MAME framebuffer" }
-    if (-not $aimSeen) { $missing += "controller aim" }
+    if (-not $trackedAimSeen) { $missing += "tracked controller aim" }
     $result = "LIVE VR ACCEPTANCE TEST: INCOMPLETE`nMissing: $($missing -join ', ')`nLogs: $logDir"
     Set-Content -Path $resultFile -Value $result
     throw $result
