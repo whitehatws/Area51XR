@@ -41,8 +41,8 @@ int run_bridge(float x, float y, bool fire) {
 
     area51xr::write_gun_state(*ipc.state(), x, y, fire);
     std::cout << "MAME bridge ready: aim=" << x << ',' << y
-              << " trigger=" << (fire ? "down" : "up") << '\n';
-    std::cout << "Waiting for MAME frames. Press Ctrl+C to stop.\n";
+              << " trigger=" << (fire ? "down" : "up") << std::endl;
+    std::cout << "Waiting for MAME frames. Press Ctrl+C to stop." << std::endl;
 
     std::uint64_t last_frame = 0;
     for (;;) {
@@ -51,7 +51,7 @@ int run_bridge(float x, float y, bool fire) {
             last_frame = status.frame_number;
             std::cout << "frame=" << status.frame_number
                       << " size=" << status.width << 'x' << status.height
-                      << " bytes=" << status.payload_bytes << '\n';
+                      << " bytes=" << status.payload_bytes << std::endl;
         }
         std::this_thread::sleep_for(std::chrono::milliseconds(16));
     }
