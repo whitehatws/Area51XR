@@ -6,10 +6,14 @@
 
 namespace area51xr {
 
+constexpr float kDefaultScreenDistanceMeters = 1.0f;
+constexpr float kDefaultScreenWidthMeters = 1.4f;
+constexpr float kDefaultScreenHeightMeters = 1.05f;
+
 struct AimPlane {
-    Vec3 center{0.0f, 0.0f, -1.0f};
-    float width{1.6f};
-    float height{0.9f};
+    Vec3 center{0.0f, 0.0f, -kDefaultScreenDistanceMeters};
+    float width{kDefaultScreenWidthMeters};
+    float height{kDefaultScreenHeightMeters};
 };
 
 struct NormalizedAim {
