@@ -1,6 +1,8 @@
 /build/
 /.vs/
 /.vscode/
+/external/
+/logs/
 *.user
 *.suo
 *.log
