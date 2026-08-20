@@ -1,8 +1,8 @@
 #include "area51xr/reconstruction_capture.h"
 
+#include <algorithm>
 #include <array>
 #include <bit>
-#include <cstring>
 #include <limits>
 
 namespace area51xr {
@@ -32,7 +32,7 @@ std::uint32_t checksum(std::span<const std::uint8_t> bytes) noexcept {
 }
 
 bool read_u32(std::span<const std::uint8_t> bytes, std::size_t& offset, std::uint32_t& out) noexcept {
-    if (offset + 4 > bytes.size()) return false;
+    if (offset > bytes.size() || bytes.size() - offset < 4) return false;
     out = 0;
     for (int shift = 0; shift < 32; shift += 8) {
         out |= static_cast<std::uint32_t>(bytes[offset++]) << shift;
@@ -41,7 +41,7 @@ bool read_u32(std::span<const std::uint8_t> bytes, std::size_t& offset, std::uin
 }
 
 bool read_u64(std::span<const std::uint8_t> bytes, std::size_t& offset, std::uint64_t& out) noexcept {
-    if (offset + 8 > bytes.size()) return false;
+    if (offset > bytes.size() || bytes.size() - offset < 8) return false;
     out = 0;
     for (int shift = 0; shift < 64; shift += 8) {
         out |= static_cast<std::uint64_t>(bytes[offset++]) << shift;
@@ -121,15 +121,21 @@ bool decode_reconstruction_capture(
         return false;
     }
 
-    const std::uint64_t payload_bytes = pixel_bytes + depth_count * sizeof(float);
-    if (offset + payload_bytes != checksum_offset) {
+    if (offset > checksum_offset || pixel_bytes > checksum_offset - offset) {
+        output = {};
+        return false;
+    }
+    const std::size_t pixel_size = static_cast<std::size_t>(pixel_bytes);
+    const std::size_t depth_size = static_cast<std::size_t>(depth_count) * sizeof(float);
+    if (depth_size > checksum_offset - offset - pixel_size ||
+        offset + pixel_size + depth_size != checksum_offset) {
         output = {};
         return false;
     }
 
     output.pixels.assign(bytes.begin() + static_cast<std::ptrdiff_t>(offset),
-                         bytes.begin() + static_cast<std::ptrdiff_t>(offset + pixel_bytes));
-    offset += static_cast<std::size_t>(pixel_bytes);
+                         bytes.begin() + static_cast<std::ptrdiff_t>(offset + pixel_size));
+    offset += pixel_size;
     output.depth_m.resize(static_cast<std::size_t>(depth_count));
     for (float& value : output.depth_m) {
         std::uint32_t bits{};
