@@ -10,6 +10,7 @@ add_library(a51xr_core
     src/core/mame_bridge.cpp
     src/core/mame_ipc.cpp
     src/core/mame_adapter.cpp
+    src/core/bridge_host.cpp
 )
 target_include_directories(a51xr_core PUBLIC src include)
 
@@ -39,4 +40,8 @@ if(BUILD_TESTING)
     add_executable(area51xr_mame_adapter_tests tests/mame_adapter_tests.cpp)
     target_link_libraries(area51xr_mame_adapter_tests PRIVATE a51xr_core)
     add_test(NAME mame_adapter COMMAND area51xr_mame_adapter_tests)
+
+    add_executable(area51xr_bridge_host_tests tests/bridge_host_tests.cpp)
+    target_link_libraries(area51xr_bridge_host_tests PRIVATE a51xr_core)
+    add_test(NAME bridge_host COMMAND area51xr_bridge_host_tests)
 endif()
