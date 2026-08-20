@@ -3,6 +3,8 @@ param(
 
     [string]$MameRoot = "",
 
+    [string]$OpenXrSdk = "",
+
     [string]$RomPath = ""
 )
 
@@ -11,6 +13,9 @@ $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent $PSScriptRoot
 if ([string]::IsNullOrWhiteSpace($MameRoot)) {
     $MameRoot = Join-Path $root "external\mame"
+}
+if ([string]::IsNullOrWhiteSpace($OpenXrSdk)) {
+    $OpenXrSdk = Join-Path $root "external\openxr-sdk"
 }
 
 $bash = Join-Path $MsysRoot "usr\bin\bash.exe"
@@ -37,28 +42,33 @@ if ($LASTEXITCODE -ne 0) {
     throw "MSYS2 package installation failed with exit code $LASTEXITCODE."
 }
 
-if (-not (Test-Path (Join-Path $MameRoot ".git"))) {
-    Write-Host "Cloning MAME source..."
-    $parent = Split-Path -Parent $MameRoot
-    New-Item -ItemType Directory -Force -Path $parent | Out-Null
+function Clone-IfMissing([string]$Target, [string]$Url, [string]$Label) {
+    if (Test-Path (Join-Path $Target ".git")) {
+        Write-Host "Using existing $Label source at $Target"
+        return
+    }
 
-    $env:A51XR_MAME_ROOT = $MameRoot
+    Write-Host "Cloning $Label source..."
+    $parent = Split-Path -Parent $Target
+    New-Item -ItemType Directory -Force -Path $parent | Out-Null
+    $env:A51XR_CLONE_TARGET = $Target
+    $env:A51XR_CLONE_URL = $Url
     $cloneCommand = @'
 export PATH=/ucrt64/bin:/usr/bin:$PATH
-target="$(cygpath -u "$A51XR_MAME_ROOT")"
-git clone --depth 1 https://github.com/mamedev/mame.git "$target"
+target="$(cygpath -u "$A51XR_CLONE_TARGET")"
+git clone --depth 1 "$A51XR_CLONE_URL" "$target"
 '@
     & $bash -lc $cloneCommand
     if ($LASTEXITCODE -ne 0) {
-        throw "MAME source clone failed with exit code $LASTEXITCODE."
+        throw "$Label source clone failed with exit code $LASTEXITCODE."
     }
 }
-else {
-    Write-Host "Using existing MAME source at $MameRoot"
-}
+
+Clone-IfMissing -Target $MameRoot -Url "https://github.com/mamedev/mame.git" -Label "MAME"
+Clone-IfMissing -Target $OpenXrSdk -Url "https://github.com/KhronosGroup/OpenXR-SDK.git" -Label "OpenXR SDK"
 
 Write-Host "Building and validating Area51XR + targeted MAME..."
-& (Join-Path $PSScriptRoot "smoke-test.ps1") -MameRoot $MameRoot -MsysRoot $MsysRoot
+& (Join-Path $PSScriptRoot "smoke-test.ps1") -MameRoot $MameRoot -MsysRoot $MsysRoot -OpenXrSdk $OpenXrSdk
 
 if (-not [string]::IsNullOrWhiteSpace($RomPath)) {
     $mameExe = Get-ChildItem -Path $MameRoot -Filter "*area51xr*.exe" -File -ErrorAction SilentlyContinue |
