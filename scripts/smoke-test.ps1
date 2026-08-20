@@ -37,10 +37,10 @@ Write-Host "[3/5] Running Area51XR tests..."
 & (Join-Path $PSScriptRoot "test.ps1")
 
 Write-Host "[4/5] Building targeted MAME CoJag subtarget..."
-$escapedMameRoot = $MameRoot.Replace("'", "'\"'\"'")
+$env:A51XR_MAME_ROOT = $MameRoot
 $buildCommand = @"
 export PATH=/ucrt64/bin:/usr/bin:`$PATH
-cd "`$(cygpath -u '$escapedMameRoot')"
+cd "`$(cygpath -u "`$A51XR_MAME_ROOT")"
 make SUBTARGET=area51xr SOURCES=src/mame/atari/jaguar.cpp REGENIE=1 -j$Jobs
 "@
 
