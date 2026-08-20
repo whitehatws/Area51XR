@@ -13,7 +13,7 @@ param(
 $ErrorActionPreference = "Stop"
 
 $root = Split-Path -Parent $PSScriptRoot
-$hostExe = Join-Path $root "build\RelWithDebInfo\area51xr.exe"
+$hostExe = Join-Path $root "build-mingw\area51xr.exe"
 
 if (-not (Test-Path $hostExe)) {
     throw "Area51XR host not found at '$hostExe'. Run smoke-test.ps1 first."
@@ -60,15 +60,13 @@ try {
         -RedirectStandardOutput $mameOut -RedirectStandardError $mameErr
 
     $deadline = (Get-Date).AddSeconds($DurationSeconds)
-    $lastStatus = "Waiting for framebuffer traffic..."
     while ((Get-Date) -lt $deadline) {
         Start-Sleep -Milliseconds 500
 
         if (Test-Path $hostOut) {
             $hostText = Get-Content -Raw -Path $hostOut -ErrorAction SilentlyContinue
             if ($hostText -match "frame=(\d+) size=(\d+)x(\d+) bytes=(\d+)") {
-                $lastStatus = $Matches[0]
-                Write-Host "Bridge traffic detected: $lastStatus"
+                Write-Host "Bridge traffic detected: $($Matches[0])"
                 Write-Host "LIVE MAME BRIDGE TEST PASSED"
                 Write-Host "Logs: $logDir"
                 exit 0
