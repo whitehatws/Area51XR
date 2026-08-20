@@ -19,29 +19,36 @@ int main() {
 
     assert(area51xr::publish_frame(shared, header, pixels));
     assert(shared.frame.frame_number == 42);
-    assert(shared.frame.width == 2);
-    assert(shared.frame.height == 1);
-    for (std::size_t i = 0; i < pixels.size(); ++i) {
-        assert(shared.frame_pixels[i] == pixels[i]);
-    }
+    assert((shared.frame.sequence & 1u) == 0);
+
+    std::array<std::uint8_t, 8> copied{};
+    area51xr::MameFrameHeader copied_header{};
+    assert(area51xr::copy_latest_frame(shared, copied_header, copied));
+    assert(copied_header.frame_number == 42);
+    assert(copied_header.width == 2);
+    assert(copied_header.height == 1);
+    assert(copied == pixels);
 
     auto bad_header = header;
     bad_header.payload_bytes = pixels.size() + 1;
     assert(!area51xr::publish_frame(shared, bad_header, pixels));
+
+    std::array<std::uint8_t, 4> too_small{};
+    assert(!area51xr::copy_latest_frame(shared, copied_header, too_small));
 
 #ifdef _WIN32
     area51xr::MameIpc owner;
     assert(owner.create());
     assert(owner.valid());
 
-    owner.state()->gun.sequence = 7;
+    owner.state()->gun.sequence = 8;
     owner.state()->gun.aim_x = 0.25f;
     owner.state()->gun.aim_y = 0.75f;
 
     area51xr::MameIpc client;
     assert(client.open());
     assert(client.valid());
-    assert(client.state()->gun.sequence == 7);
+    assert(client.state()->gun.sequence == 8);
     assert(client.state()->gun.aim_x == 0.25f);
     assert(client.state()->gun.aim_y == 0.75f);
 #endif
