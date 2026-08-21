@@ -17,3 +17,5 @@ captures/
 *.zip
 *.a51cap
 *.obj
+*.quality.json
+*.jsonl
