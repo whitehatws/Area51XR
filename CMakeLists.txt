@@ -47,11 +47,10 @@ endif()
 set(A51XR_ORT_DLL "")
 if(WIN32 AND A51XR_ONNXRUNTIME_DIR AND
    EXISTS "${A51XR_ONNXRUNTIME_DIR}/build/native/include/onnxruntime_cxx_api.h" AND
-   EXISTS "${A51XR_ONNXRUNTIME_DIR}/runtimes/win-x64/native/onnxruntime.lib")
+   EXISTS "${A51XR_ONNXRUNTIME_DIR}/runtimes/win-x64/native/onnxruntime.dll")
     target_sources(a51xr_core PRIVATE src/reconstruction/onnx_depth_backend.cpp)
     target_include_directories(a51xr_core PRIVATE "${A51XR_ONNXRUNTIME_DIR}/build/native/include")
     target_compile_definitions(a51xr_core PUBLIC A51XR_HAS_ONNXRUNTIME=1)
-    target_link_libraries(a51xr_core PRIVATE "${A51XR_ONNXRUNTIME_DIR}/runtimes/win-x64/native/onnxruntime.lib")
     set(A51XR_ORT_DLL "${A51XR_ONNXRUNTIME_DIR}/runtimes/win-x64/native/onnxruntime.dll")
 endif()
 
