@@ -24,13 +24,14 @@ $root = Split-Path -Parent $PSScriptRoot
 $hostExe = Join-Path $root "build-mingw\area51xr.exe"
 $captureExe = Join-Path $root "build-mingw\area51xr-capture.exe"
 $reconstructExe = Join-Path $root "build-mingw\area51xr-reconstruct.exe"
+$analyzeScript = Join-Path $PSScriptRoot "analyze-reconstruction-sequence.ps1"
 
 if ([string]::IsNullOrWhiteSpace($OutputDir)) {
     $stamp = Get-Date -Format "yyyyMMdd-HHmmss"
     $OutputDir = Join-Path $root "logs\sequence-$stamp"
 }
 
-$required = @($hostExe, $captureExe, $reconstructExe, $MameExe, $RomPath)
+$required = @($hostExe, $captureExe, $reconstructExe, $analyzeScript, $MameExe, $RomPath)
 if (-not [string]::IsNullOrWhiteSpace($DepthModelPath)) {
     $required += $DepthModelPath
 }
@@ -117,6 +118,11 @@ try {
         if ($i + 1 -lt $FrameCount -and $IntervalMs -gt 0) {
             Start-Sleep -Milliseconds $IntervalMs
         }
+    }
+
+    & $analyzeScript -ManifestPath $manifestPath
+    if ($LASTEXITCODE -ne 0) {
+        throw "Reconstruction sequence analysis failed with exit code $LASTEXITCODE."
     }
 
     $result = @(
