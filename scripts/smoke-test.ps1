@@ -85,6 +85,19 @@ ctest --test-dir "$A51XR_ROOT_MSYS/build-mingw" --output-on-failure --repeat unt
 '@
 & $bash -lc $hostTestCommand
 if ($LASTEXITCODE -ne 0) {
+    $diagDir = $env:A51XR_ACCEPTANCE_DIR
+    if ([string]::IsNullOrWhiteSpace($diagDir)) {
+        $diagDir = Join-Path $root "logs"
+    }
+    $diagPath = Join-Path $diagDir "windows-block-diagnostics.txt"
+    try {
+        & (Join-Path $PSScriptRoot "collect-windows-block-diagnostics.ps1") `
+            -BuildDir (Join-Path $root "build-mingw") `
+            -OutputPath $diagPath
+    }
+    catch {
+        Write-Host "Warning: failed to collect Windows block diagnostics: $_"
+    }
     throw "Area51XR tests failed with exit code $LASTEXITCODE."
 }
 
