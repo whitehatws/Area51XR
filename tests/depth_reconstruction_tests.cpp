@@ -38,10 +38,11 @@ int main() {
 
     const std::array<float, 4> one_missing{0.0f, 2.0f, 2.0f, 2.0f};
     const auto& missing = reconstructor.update(one_missing, 2, 2, camera);
-    assert(missing.stats.confident_samples == 4);
+    assert(missing.stats.confident_samples == 3);
     assert(missing.stats.valid_depth_samples == 3);
     assert(missing.stats.mesh_triangles == 1);
     assert(missing.stats.rejected_triangles == 1);
+    assert(near(missing.stats.confident_sample_ratio, 0.75f));
     assert(near(missing.stats.valid_depth_ratio, 0.75f));
     assert(near(missing.stats.mesh_triangle_ratio, 0.5f));
 
