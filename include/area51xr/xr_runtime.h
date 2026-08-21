@@ -41,12 +41,25 @@ struct VideoFrameView {
     std::span<const std::uint8_t> pixels{};
 };
 
+struct SpatialMeshVertexView {
+    Vec3 position{};
+    float u{};
+    float v{};
+};
+
+struct SpatialMeshView {
+    std::uint64_t frame_number{};
+    std::span<const SpatialMeshVertexView> vertices{};
+    std::span<const std::uint32_t> indices{};
+};
+
 class XrRuntime {
 public:
     virtual ~XrRuntime() = default;
     virtual bool initialize() = 0;
     virtual bool poll(XrInputState& state) = 0;
     virtual bool present(const VideoFrameView& frame) = 0;
+    virtual bool present_mesh(const SpatialMeshView& mesh) = 0;
     virtual void shutdown() = 0;
 };
 
@@ -57,14 +70,21 @@ public:
     bool initialize() override;
     bool poll(XrInputState& state) override;
     bool present(const VideoFrameView& frame) override;
+    bool present_mesh(const SpatialMeshView& mesh) override;
     void shutdown() override;
 
     void set_state(const XrInputState& state);
     [[nodiscard]] std::uint64_t last_presented_frame() const noexcept;
+    [[nodiscard]] std::uint64_t last_presented_mesh_frame() const noexcept;
+    [[nodiscard]] std::size_t last_presented_mesh_vertices() const noexcept;
+    [[nodiscard]] std::size_t last_presented_mesh_triangles() const noexcept;
 
 private:
     XrInputState state_{};
     std::uint64_t last_presented_frame_{};
+    std::uint64_t last_presented_mesh_frame_{};
+    std::size_t last_presented_mesh_vertices_{};
+    std::size_t last_presented_mesh_triangles_{};
     bool initialized_{};
 };
 
