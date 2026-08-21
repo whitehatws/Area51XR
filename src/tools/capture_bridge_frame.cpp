@@ -1,11 +1,17 @@
+#include "area51xr/depth_inference.h"
 #include "area51xr/depth_provider.h"
 #include "area51xr/mame_ipc.h"
 #include "area51xr/reconstruction_capture.h"
+
+#ifdef A51XR_HAS_ONNXRUNTIME
+#include "area51xr/onnx_depth_backend.h"
+#endif
 
 #include <chrono>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <memory>
 #include <span>
 #include <string>
 #include <thread>
@@ -23,20 +29,20 @@ bool write_file(const std::filesystem::path& path, std::span<const std::uint8_t>
 }
 
 void print_usage() {
-    std::cerr << "usage: area51xr-capture <output.a51cap> [timeout-ms]\n";
+    std::cerr << "usage: area51xr-capture <output.a51cap> [timeout-ms] [depth-model.onnx]\n";
 }
 
 } // namespace
 
 int main(int argc, char** argv) {
-    if (argc != 2 && argc != 3) {
+    if (argc < 2 || argc > 4) {
         print_usage();
         return 1;
     }
 
     const std::filesystem::path output_path = argv[1];
     int timeout_ms = 10000;
-    if (argc == 3) {
+    if (argc >= 3) {
         try {
             timeout_ms = std::stoi(argv[2]);
         } catch (...) {
@@ -48,6 +54,7 @@ int main(int argc, char** argv) {
             return 1;
         }
     }
+    const std::filesystem::path model_path = argc == 4 ? std::filesystem::path(argv[3]) : std::filesystem::path{};
 
     area51xr::MameIpc ipc;
     if (!ipc.open()) {
@@ -78,29 +85,49 @@ int main(int argc, char** argv) {
     frame.pixels = std::span<const std::uint8_t>(
         pixels.data(), static_cast<std::size_t>(header.payload_bytes));
 
-    // This capture tool deliberately uses a deterministic synthetic depth map.
-    // Model-backed captures can be added later without changing the .a51cap format.
-    area51xr::SyntheticDepthProvider depth_provider(2.0f, 0.25f);
-    area51xr::DepthEstimate depth{};
-    if (!depth_provider.estimate(frame, depth)) {
-        std::cerr << "failed to estimate capture depth\n";
+    area51xr::SyntheticDepthProvider synthetic_provider(2.0f, 0.25f);
+    area51xr::DepthProvider* depth_provider = &synthetic_provider;
+
+#ifdef A51XR_HAS_ONNXRUNTIME
+    std::unique_ptr<area51xr::OnnxRuntimeBackend> onnx_backend;
+    std::unique_ptr<area51xr::DepthAnythingV2Provider> model_provider;
+    if (!model_path.empty()) {
+        onnx_backend = std::make_unique<area51xr::OnnxRuntimeBackend>(model_path);
+        if (!onnx_backend->valid()) {
+            std::cerr << "failed to initialize ONNX depth model: " << onnx_backend->last_error() << '\n';
+            return 4;
+        }
+        model_provider = std::make_unique<area51xr::DepthAnythingV2Provider>(*onnx_backend);
+        depth_provider = model_provider.get();
+    }
+#else
+    if (!model_path.empty()) {
+        std::cerr << "this build does not include ONNX Runtime support\n";
         return 4;
+    }
+#endif
+
+    area51xr::DepthEstimate depth{};
+    if (!depth_provider->estimate(frame, depth)) {
+        std::cerr << "failed to estimate capture depth\n";
+        return 5;
     }
 
     const auto bytes = area51xr::encode_reconstruction_capture(frame, depth.depth_m);
     if (bytes.empty()) {
         std::cerr << "failed to encode reconstruction capture\n";
-        return 5;
+        return 6;
     }
 
     if (!write_file(output_path, bytes)) {
         std::cerr << "failed to write capture: " << output_path.string() << '\n';
-        return 6;
+        return 7;
     }
 
     std::cout << "capture=" << output_path.string()
               << " frame=" << header.frame_number
               << " size=" << header.width << 'x' << header.height
+              << " depth=" << (model_path.empty() ? "synthetic" : "model")
               << " bytes=" << bytes.size() << '\n';
     return 0;
 }
