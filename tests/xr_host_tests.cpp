@@ -3,14 +3,15 @@
 #include <array>
 #include <cassert>
 #include <cmath>
+#include <memory>
 
 namespace {
 bool near(float a, float b) { return std::abs(a - b) < 1.0e-4f; }
 }
 
 int main() {
-    area51xr::MameSharedState shared{};
-    shared.protocol_version = area51xr::kMameBridgeProtocolVersion;
+    auto shared = std::make_unique<area51xr::MameSharedState>();
+    shared->protocol_version = area51xr::kMameBridgeProtocolVersion;
 
     area51xr::MameFrameHeader frame{};
     frame.frame_number = 12;
@@ -20,7 +21,7 @@ int main() {
     frame.pixel_format = 1;
     const std::array<std::uint8_t, 4> pixel{10, 20, 30, 255};
     frame.payload_bytes = pixel.size();
-    assert(area51xr::publish_frame(shared, frame, pixel));
+    assert(area51xr::publish_frame(*shared, frame, pixel));
 
     area51xr::XrInputState input{};
     input.session_running = true;
@@ -29,7 +30,7 @@ int main() {
     input.trigger_down = true;
 
     area51xr::SimulatedXrRuntime runtime(input);
-    area51xr::XrHost host(runtime, shared);
+    area51xr::XrHost host(runtime, *shared);
     assert(host.initialize());
 
     const auto first = host.tick();
@@ -42,9 +43,9 @@ int main() {
     assert(first.frame.frame_number == 12);
     assert(first.frame_presented);
     assert(runtime.last_presented_frame() == 12);
-    assert(shared.gun.trigger == 1);
-    assert(near(shared.gun.aim_x, 0.5f));
-    assert(near(shared.gun.aim_y, 0.5f));
+    assert(shared->gun.trigger == 1);
+    assert(near(shared->gun.aim_x, 0.5f));
+    assert(near(shared->gun.aim_y, 0.5f));
 
     input.pose_valid = false;
     input.trigger_down = true;
@@ -53,9 +54,9 @@ int main() {
     assert(!invalid.aim_valid);
     assert(invalid.frame_presented);
     assert(runtime.last_presented_frame() == 12);
-    assert(shared.gun.trigger == 0);
-    assert(near(shared.gun.aim_x, 0.5f));
-    assert(near(shared.gun.aim_y, 0.5f));
+    assert(shared->gun.trigger == 0);
+    assert(near(shared->gun.aim_x, 0.5f));
+    assert(near(shared->gun.aim_y, 0.5f));
 
     host.shutdown();
     return 0;
