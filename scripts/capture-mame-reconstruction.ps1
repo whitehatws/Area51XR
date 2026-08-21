@@ -51,6 +51,10 @@ $capturePath = Join-Path $OutputDir "frame.a51cap"
 $objPath = Join-Path $OutputDir "frame.obj"
 $qualityPath = Join-Path $OutputDir "quality.json"
 $resultPath = Join-Path $OutputDir "result.txt"
+$depthLabel = "synthetic"
+if (-not [string]::IsNullOrWhiteSpace($DepthModelPath)) {
+    $depthLabel = $DepthModelPath
+}
 
 $host = $null
 $mame = $null
@@ -98,7 +102,7 @@ try {
         "Capture: $capturePath",
         "Mesh:    $objPath",
         "Quality: $qualityPath",
-        "Depth:   $([string]::IsNullOrWhiteSpace($DepthModelPath) ? 'synthetic' : $DepthModelPath)",
+        "Depth:   $depthLabel",
         "Logs:    $OutputDir"
     ) -join [Environment]::NewLine
     Set-Content -Path $resultPath -Value $result
