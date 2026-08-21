@@ -90,9 +90,9 @@ int main(int argc, char** argv) {
         return 2;
     }
 
-    const std::vector<std::uint8_t> bytes(
-        std::istreambuf_iterator<char>(in),
-        std::istreambuf_iterator<char>());
+    const auto input_begin = std::istreambuf_iterator<char>{in};
+    const auto input_end = std::istreambuf_iterator<char>{};
+    const std::vector<std::uint8_t> bytes(input_begin, input_end);
     area51xr::ReconstructionCapture capture{};
     if (!area51xr::decode_reconstruction_capture(bytes, capture)) {
         std::cerr << "invalid or corrupted reconstruction capture\n";
