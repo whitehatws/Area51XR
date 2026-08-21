@@ -26,6 +26,16 @@ bool SimulatedXrRuntime::present(const VideoFrameView& frame) {
     return true;
 }
 
+bool SimulatedXrRuntime::present_mesh(const SpatialMeshView& mesh) {
+    if (!initialized_) {
+        return false;
+    }
+    last_presented_mesh_frame_ = mesh.frame_number;
+    last_presented_mesh_vertices_ = mesh.vertices.size();
+    last_presented_mesh_triangles_ = mesh.indices.size() / 3;
+    return true;
+}
+
 void SimulatedXrRuntime::shutdown() {
     initialized_ = false;
 }
@@ -36,6 +46,18 @@ void SimulatedXrRuntime::set_state(const XrInputState& state) {
 
 std::uint64_t SimulatedXrRuntime::last_presented_frame() const noexcept {
     return last_presented_frame_;
+}
+
+std::uint64_t SimulatedXrRuntime::last_presented_mesh_frame() const noexcept {
+    return last_presented_mesh_frame_;
+}
+
+std::size_t SimulatedXrRuntime::last_presented_mesh_vertices() const noexcept {
+    return last_presented_mesh_vertices_;
+}
+
+std::size_t SimulatedXrRuntime::last_presented_mesh_triangles() const noexcept {
+    return last_presented_mesh_triangles_;
 }
 
 Vec3 rotate_vector(const Quat& q, Vec3 v) noexcept {
