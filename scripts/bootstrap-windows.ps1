@@ -5,6 +5,10 @@ param(
 
     [string]$OpenXrSdk = "",
 
+    [string]$OnnxRuntimeDir = "",
+
+    [string]$DepthModelPath = "",
+
     [string]$RomPath = ""
 )
 
@@ -16,6 +20,12 @@ if ([string]::IsNullOrWhiteSpace($MameRoot)) {
 }
 if ([string]::IsNullOrWhiteSpace($OpenXrSdk)) {
     $OpenXrSdk = Join-Path $root "external\openxr-sdk"
+}
+if ([string]::IsNullOrWhiteSpace($OnnxRuntimeDir)) {
+    $OnnxRuntimeDir = Join-Path $root "external\onnxruntime-1.28.0"
+}
+if ([string]::IsNullOrWhiteSpace($DepthModelPath)) {
+    $DepthModelPath = Join-Path $root "models\depth_anything_v2_vits.onnx"
 }
 
 $bash = Join-Path $MsysRoot "usr\bin\bash.exe"
@@ -64,11 +74,52 @@ git clone --depth 1 "$A51XR_CLONE_URL" "$target"
     }
 }
 
+function Download-File([string]$Url, [string]$Target, [string]$Label) {
+    if (Test-Path $Target) {
+        Write-Host "Using existing $Label at $Target"
+        return
+    }
+    Write-Host "Downloading $Label..."
+    $parent = Split-Path -Parent $Target
+    New-Item -ItemType Directory -Force -Path $parent | Out-Null
+    Invoke-WebRequest -Uri $Url -OutFile $Target -UseBasicParsing
+}
+
 Clone-IfMissing -Target $MameRoot -Url "https://github.com/mamedev/mame.git" -Label "MAME"
 Clone-IfMissing -Target $OpenXrSdk -Url "https://github.com/KhronosGroup/OpenXR-SDK.git" -Label "OpenXR SDK"
 
+$ortHeader = Join-Path $OnnxRuntimeDir "build\native\include\onnxruntime_cxx_api.h"
+$ortLib = Join-Path $OnnxRuntimeDir "runtimes\win-x64\native\onnxruntime.lib"
+if (-not (Test-Path $ortHeader) -or -not (Test-Path $ortLib)) {
+    $ortPackage = Join-Path $root "external\Microsoft.ML.OnnxRuntime.1.28.0.nupkg"
+    Download-File -Url "https://www.nuget.org/api/v2/package/Microsoft.ML.OnnxRuntime/1.28.0" `
+        -Target $ortPackage -Label "ONNX Runtime 1.28.0"
+
+    Write-Host "Extracting ONNX Runtime..."
+    if (Test-Path $OnnxRuntimeDir) {
+        Remove-Item -Recurse -Force $OnnxRuntimeDir
+    }
+    New-Item -ItemType Directory -Force -Path $OnnxRuntimeDir | Out-Null
+    Expand-Archive -Path $ortPackage -DestinationPath $OnnxRuntimeDir -Force
+}
+if (-not (Test-Path $ortHeader) -or -not (Test-Path $ortLib)) {
+    throw "ONNX Runtime package did not contain the expected Windows x64 C++ files."
+}
+
+$depthModelUrl = "https://huggingface.co/AXERA-TECH/Depth-Anything-V2/resolve/main/depth_anything_v2_vits.onnx?download=true"
+$depthModelSha256 = "443e95f17819f347f5f987384b8cb7d7d18ed6af6ac46dec9b0152748ba7dfd0"
+Download-File -Url $depthModelUrl -Target $DepthModelPath -Label "Depth Anything V2 Small ONNX model"
+$modelHash = (Get-FileHash -Path $DepthModelPath -Algorithm SHA256).Hash.ToLowerInvariant()
+if ($modelHash -ne $depthModelSha256) {
+    throw "Depth model checksum mismatch. Expected $depthModelSha256, got $modelHash. Delete '$DepthModelPath' before retrying."
+}
+
 Write-Host "Building and validating Area51XR + targeted MAME..."
-& (Join-Path $PSScriptRoot "smoke-test.ps1") -MameRoot $MameRoot -MsysRoot $MsysRoot -OpenXrSdk $OpenXrSdk
+& (Join-Path $PSScriptRoot "smoke-test.ps1") `
+    -MameRoot $MameRoot `
+    -MsysRoot $MsysRoot `
+    -OpenXrSdk $OpenXrSdk `
+    -OnnxRuntimeDir $OnnxRuntimeDir
 
 if (-not [string]::IsNullOrWhiteSpace($RomPath)) {
     $mameExe = Get-ChildItem -Path $MameRoot -Filter "*area51xr*.exe" -File -ErrorAction SilentlyContinue |
@@ -83,5 +134,6 @@ if (-not [string]::IsNullOrWhiteSpace($RomPath)) {
 else {
     Write-Host ""
     Write-Host "Build setup is complete."
-    Write-Host "When your Area 51 game files are available, rerun with -RomPath <folder> to execute the live bridge test."
+    Write-Host "Depth model: $DepthModelPath"
+    Write-Host "When Area 51 game files are available, rerun with -RomPath <folder> for the live bridge test."
 }
