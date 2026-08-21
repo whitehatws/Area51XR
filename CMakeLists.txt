@@ -85,94 +85,64 @@ endif()
 
 include(CTest)
 if(BUILD_TESTING)
-    # RelWithDebInfo defines NDEBUG by default. Keep assertions active in test
-    # targets so assert-based regressions actually execute.
+    # RelWithDebInfo defines NDEBUG by default. Keep assertions active so the
+    # assert-based regression sources actually execute their checks.
     if(MSVC)
         add_compile_options(/UNDEBUG)
     else()
         add_compile_options(-UNDEBUG)
     endif()
 
-    # Core regressions intentionally include projection, MAME IPC, and depth
-    # mesh coverage in one executable. This reduces the number of freshly
-    # generated unsigned executables Windows reputation scanning must launch.
-    add_executable(area51xr_tests tests/projection_tests.cpp)
+    # Compile every regression source into one executable. Windows reputation
+    # scanning was intermittently refusing to launch freshly linked individual
+    # test EXEs even though neighboring binaries launched normally. Renaming
+    # each source's main() keeps the tests separate at compile time while CTest
+    # only needs to launch one stable process.
+    set(A51XR_TEST_SOURCES
+        tests/projection_tests.cpp
+        tests/mame_bridge_tests.cpp
+        tests/mame_adapter_tests.cpp
+        tests/bridge_host_tests.cpp
+        tests/xr_runtime_tests.cpp
+        tests/xr_aim_tests.cpp
+        tests/xr_host_tests.cpp
+        tests/d3d11_mesh_renderer_tests.cpp
+        tests/reprojection_tests.cpp
+        tests/depth_stabilizer_tests.cpp
+        tests/depth_reconstruction_tests.cpp
+        tests/reconstruction_engine_tests.cpp
+        tests/reconstruction_capture_tests.cpp
+        tests/relative_depth_tests.cpp
+        tests/depth_anything_v2_tests.cpp
+        tests/depth_inference_tests.cpp
+        tests/mesh_io_tests.cpp
+        tests/reconstruction_quality_tests.cpp
+        tests/reconstruction_presenter_tests.cpp
+        tests/spatial_reconstruction_host_tests.cpp
+    )
+
+    set_source_files_properties(tests/projection_tests.cpp PROPERTIES COMPILE_DEFINITIONS "main=area51xr_test_projection")
+    set_source_files_properties(tests/mame_bridge_tests.cpp PROPERTIES COMPILE_DEFINITIONS "main=area51xr_test_mame_bridge")
+    set_source_files_properties(tests/mame_adapter_tests.cpp PROPERTIES COMPILE_DEFINITIONS "main=area51xr_test_mame_adapter")
+    set_source_files_properties(tests/bridge_host_tests.cpp PROPERTIES COMPILE_DEFINITIONS "main=area51xr_test_bridge_host")
+    set_source_files_properties(tests/xr_runtime_tests.cpp PROPERTIES COMPILE_DEFINITIONS "main=area51xr_test_xr_runtime")
+    set_source_files_properties(tests/xr_aim_tests.cpp PROPERTIES COMPILE_DEFINITIONS "main=area51xr_test_xr_aim")
+    set_source_files_properties(tests/xr_host_tests.cpp PROPERTIES COMPILE_DEFINITIONS "main=area51xr_test_xr_host")
+    set_source_files_properties(tests/d3d11_mesh_renderer_tests.cpp PROPERTIES COMPILE_DEFINITIONS "main=area51xr_test_d3d11_mesh_renderer")
+    set_source_files_properties(tests/reprojection_tests.cpp PROPERTIES COMPILE_DEFINITIONS "main=area51xr_test_reprojection")
+    set_source_files_properties(tests/depth_stabilizer_tests.cpp PROPERTIES COMPILE_DEFINITIONS "main=area51xr_test_depth_stabilizer")
+    set_source_files_properties(tests/depth_reconstruction_tests.cpp PROPERTIES COMPILE_DEFINITIONS "main=area51xr_test_depth_reconstruction")
+    set_source_files_properties(tests/reconstruction_engine_tests.cpp PROPERTIES COMPILE_DEFINITIONS "main=area51xr_test_reconstruction_engine")
+    set_source_files_properties(tests/reconstruction_capture_tests.cpp PROPERTIES COMPILE_DEFINITIONS "main=area51xr_test_reconstruction_capture")
+    set_source_files_properties(tests/relative_depth_tests.cpp PROPERTIES COMPILE_DEFINITIONS "main=area51xr_test_relative_depth")
+    set_source_files_properties(tests/depth_anything_v2_tests.cpp PROPERTIES COMPILE_DEFINITIONS "main=area51xr_test_depth_anything_v2")
+    set_source_files_properties(tests/depth_inference_tests.cpp PROPERTIES COMPILE_DEFINITIONS "main=area51xr_test_depth_inference")
+    set_source_files_properties(tests/mesh_io_tests.cpp PROPERTIES COMPILE_DEFINITIONS "main=area51xr_test_mesh_io")
+    set_source_files_properties(tests/reconstruction_quality_tests.cpp PROPERTIES COMPILE_DEFINITIONS "main=area51xr_test_reconstruction_quality")
+    set_source_files_properties(tests/reconstruction_presenter_tests.cpp PROPERTIES COMPILE_DEFINITIONS "main=area51xr_test_reconstruction_presenter")
+    set_source_files_properties(tests/spatial_reconstruction_host_tests.cpp PROPERTIES COMPILE_DEFINITIONS "main=area51xr_test_spatial_reconstruction_host")
+
+    add_executable(area51xr_tests tests/test_driver.cpp ${A51XR_TEST_SOURCES})
     target_link_libraries(area51xr_tests PRIVATE a51xr_core)
-    add_test(NAME core_regressions COMMAND area51xr_tests)
-
-    add_executable(area51xr_mame_bridge_tests tests/mame_bridge_tests.cpp)
-    target_link_libraries(area51xr_mame_bridge_tests PRIVATE a51xr_core)
-    add_test(NAME mame_bridge COMMAND area51xr_mame_bridge_tests)
-
-    add_executable(area51xr_mame_adapter_tests tests/mame_adapter_tests.cpp)
-    target_link_libraries(area51xr_mame_adapter_tests PRIVATE a51xr_core)
-    add_test(NAME mame_adapter COMMAND area51xr_mame_adapter_tests)
-
-    add_executable(area51xr_bridge_host_tests tests/bridge_host_tests.cpp)
-    target_link_libraries(area51xr_bridge_host_tests PRIVATE a51xr_core)
-    add_test(NAME bridge_host COMMAND area51xr_bridge_host_tests)
-
-    add_executable(area51xr_xr_runtime_tests tests/xr_runtime_tests.cpp)
-    target_link_libraries(area51xr_xr_runtime_tests PRIVATE a51xr_core)
-    add_test(NAME xr_runtime COMMAND area51xr_xr_runtime_tests)
-
-    add_executable(area51xr_xr_aim_tests tests/xr_aim_tests.cpp)
-    target_link_libraries(area51xr_xr_aim_tests PRIVATE a51xr_core)
-    add_test(NAME xr_aim COMMAND area51xr_xr_aim_tests)
-
-    add_executable(area51xr_xr_host_tests tests/xr_host_tests.cpp)
-    target_link_libraries(area51xr_xr_host_tests PRIVATE a51xr_core)
-    add_test(NAME xr_host COMMAND area51xr_xr_host_tests)
-
-    add_executable(area51xr_d3d11_mesh_renderer_tests tests/d3d11_mesh_renderer_tests.cpp)
-    target_link_libraries(area51xr_d3d11_mesh_renderer_tests PRIVATE a51xr_core)
-    add_test(NAME d3d11_mesh_renderer COMMAND area51xr_d3d11_mesh_renderer_tests)
-
-    add_executable(area51xr_reprojection_tests tests/reprojection_tests.cpp)
-    target_link_libraries(area51xr_reprojection_tests PRIVATE a51xr_core)
-    add_test(NAME reprojection COMMAND area51xr_reprojection_tests)
-
-    add_executable(area51xr_depth_stabilizer_tests tests/depth_stabilizer_tests.cpp)
-    target_link_libraries(area51xr_depth_stabilizer_tests PRIVATE a51xr_core)
-    add_test(NAME depth_stabilizer COMMAND area51xr_depth_stabilizer_tests)
-
-    add_executable(area51xr_depth_reconstruction_tests tests/depth_reconstruction_tests.cpp)
-    target_link_libraries(area51xr_depth_reconstruction_tests PRIVATE a51xr_core)
-    add_test(NAME depth_reconstruction COMMAND area51xr_depth_reconstruction_tests)
-
-    add_executable(area51xr_reconstruction_engine_tests tests/reconstruction_engine_tests.cpp)
-    target_link_libraries(area51xr_reconstruction_engine_tests PRIVATE a51xr_core)
-    add_test(NAME reconstruction_engine COMMAND area51xr_reconstruction_engine_tests)
-
-    add_executable(area51xr_reconstruction_capture_tests tests/reconstruction_capture_tests.cpp)
-    target_link_libraries(area51xr_reconstruction_capture_tests PRIVATE a51xr_core)
-    add_test(NAME reconstruction_capture COMMAND area51xr_reconstruction_capture_tests)
-
-    add_executable(area51xr_relative_depth_tests tests/relative_depth_tests.cpp)
-    target_link_libraries(area51xr_relative_depth_tests PRIVATE a51xr_core)
-    add_test(NAME relative_depth COMMAND area51xr_relative_depth_tests)
-
-    add_executable(area51xr_depth_anything_v2_tests tests/depth_anything_v2_tests.cpp)
-    target_link_libraries(area51xr_depth_anything_v2_tests PRIVATE a51xr_core)
-    add_test(NAME depth_anything_v2 COMMAND area51xr_depth_anything_v2_tests)
-
-    add_executable(area51xr_depth_inference_tests tests/depth_inference_tests.cpp)
-    target_link_libraries(area51xr_depth_inference_tests PRIVATE a51xr_core)
-    add_test(NAME depth_inference COMMAND area51xr_depth_inference_tests)
-
-    add_executable(area51xr_mesh_io_tests tests/mesh_io_tests.cpp)
-    target_link_libraries(area51xr_mesh_io_tests PRIVATE a51xr_core)
-    add_test(NAME mesh_io COMMAND area51xr_mesh_io_tests)
-
-    add_executable(area51xr_reconstruction_quality_tests tests/reconstruction_quality_tests.cpp)
-    target_link_libraries(area51xr_reconstruction_quality_tests PRIVATE a51xr_core)
-    add_test(NAME reconstruction_quality COMMAND area51xr_reconstruction_quality_tests)
-
-    add_executable(area51xr_reconstruction_presenter_tests tests/reconstruction_presenter_tests.cpp)
-    target_link_libraries(area51xr_reconstruction_presenter_tests PRIVATE a51xr_core)
-    add_test(NAME reconstruction_presenter COMMAND area51xr_reconstruction_presenter_tests)
-
-    add_executable(area51xr_spatial_reconstruction_host_tests tests/spatial_reconstruction_host_tests.cpp)
-    target_link_libraries(area51xr_spatial_reconstruction_host_tests PRIVATE a51xr_core)
-    add_test(NAME spatial_reconstruction_host COMMAND area51xr_spatial_reconstruction_host_tests)
+    add_test(NAME regressions COMMAND area51xr_tests)
 endif()
