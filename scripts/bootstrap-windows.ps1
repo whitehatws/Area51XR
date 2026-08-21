@@ -133,7 +133,10 @@ if (-not [string]::IsNullOrWhiteSpace($RomPath)) {
     }
 
     Write-Host "Running desktop capture and reconstruction test..."
-    & (Join-Path $PSScriptRoot "capture-mame-reconstruction.ps1") -MameExe $mameExe -RomPath $RomPath
+    & (Join-Path $PSScriptRoot "capture-mame-reconstruction.ps1") `
+        -MameExe $mameExe `
+        -RomPath $RomPath `
+        -DepthModelPath $DepthModelPath
 
     Write-Host "Running live Area 51 bridge test..."
     & (Join-Path $PSScriptRoot "live-mame-test.ps1") -MameExe $mameExe -RomPath $RomPath
