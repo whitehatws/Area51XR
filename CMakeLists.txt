@@ -17,6 +17,7 @@ add_library(a51xr_core
     src/xr/xr_runtime.cpp
     src/xr/xr_aim.cpp
     src/xr/xr_host.cpp
+    src/xr/d3d11_mesh_renderer.cpp
     src/reconstruction/depth_mesh.cpp
     src/reconstruction/reprojection.cpp
     src/reconstruction/depth_stabilizer.cpp
@@ -116,6 +117,10 @@ if(BUILD_TESTING)
     add_executable(area51xr_xr_host_tests tests/xr_host_tests.cpp)
     target_link_libraries(area51xr_xr_host_tests PRIVATE a51xr_core)
     add_test(NAME xr_host COMMAND area51xr_xr_host_tests)
+
+    add_executable(area51xr_d3d11_mesh_renderer_tests tests/d3d11_mesh_renderer_tests.cpp)
+    target_link_libraries(area51xr_d3d11_mesh_renderer_tests PRIVATE a51xr_core)
+    add_test(NAME d3d11_mesh_renderer COMMAND area51xr_d3d11_mesh_renderer_tests)
 
     add_executable(area51xr_depth_mesh_tests tests/depth_mesh_tests.cpp)
     target_link_libraries(area51xr_depth_mesh_tests PRIVATE a51xr_core)
