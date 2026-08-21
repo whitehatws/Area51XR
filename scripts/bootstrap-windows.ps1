@@ -132,6 +132,9 @@ if (-not [string]::IsNullOrWhiteSpace($RomPath)) {
         throw "Patched MAME executable was not found after the build."
     }
 
+    Write-Host "Running desktop capture and reconstruction test..."
+    & (Join-Path $PSScriptRoot "capture-mame-reconstruction.ps1") -MameExe $mameExe -RomPath $RomPath
+
     Write-Host "Running live Area 51 bridge test..."
     & (Join-Path $PSScriptRoot "live-mame-test.ps1") -MameExe $mameExe -RomPath $RomPath
 }
@@ -139,5 +142,5 @@ else {
     Write-Host ""
     Write-Host "Build setup is complete."
     Write-Host "Depth model: $DepthModelPath"
-    Write-Host "When Area 51 game files are available, rerun with -RomPath <folder> for the live bridge test."
+    Write-Host "When Area 51 game files are available, rerun with -RomPath <folder> for capture, reconstruction, and live bridge tests."
 }
