@@ -27,16 +27,20 @@ public:
     DepthAnythingV2Provider(
         TensorInferenceBackend& backend,
         std::uint32_t input_size = 518,
-        RelativeDepthCalibration calibration = {});
+        RelativeDepthCalibration calibration = {},
+        RelativeDepthAnchorOptions anchor_options = {});
 
     bool estimate(const ColorFrameView& frame, DepthEstimate& output) override;
 
     [[nodiscard]] const RelativeDepthStats& last_stats() const noexcept;
+    [[nodiscard]] const RelativeDepthStats& anchors() const noexcept;
+    void reset_anchors() noexcept;
 
 private:
     TensorInferenceBackend& backend_;
     std::uint32_t input_size_{};
     RelativeDepthCalibration calibration_{};
+    RelativeDepthAnchorTracker anchor_tracker_;
     DepthAnythingTensor input_{};
     std::vector<float> raw_output_;
     RelativeDepthStats stats_{};
