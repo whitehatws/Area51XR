@@ -33,7 +33,9 @@ add_library(a51xr_core
 target_include_directories(a51xr_core PUBLIC src include)
 
 if(WIN32 AND A51XR_OPENXR_SDK AND EXISTS "${A51XR_OPENXR_SDK}/include/openxr/openxr.h")
-    target_sources(a51xr_core PRIVATE src/xr/openxr_runtime_win32.cpp)
+    target_sources(a51xr_core PRIVATE
+        src/xr/openxr_runtime_win32.cpp
+        src/xr/openxr_mesh_runtime_win32.cpp)
     target_include_directories(a51xr_core PRIVATE "${A51XR_OPENXR_SDK}/include")
     target_compile_definitions(a51xr_core PUBLIC A51XR_HAS_OPENXR=1)
     target_link_libraries(a51xr_core PRIVATE d3d11 dxgi)
