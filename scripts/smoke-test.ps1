@@ -49,7 +49,7 @@ if ($Jobs -le 0) {
     $Jobs = [Math]::Max(2, [Environment]::ProcessorCount)
 }
 
-Write-Host "[1/7] Applying Area51XR MAME integration..."
+Write-Host "[1/8] Applying Area51XR MAME integration..."
 & (Join-Path $PSScriptRoot "apply-mame-patch.ps1") -MameRoot $MameRoot
 
 $env:A51XR_ROOT = $root
@@ -57,7 +57,7 @@ $env:A51XR_MAME_ROOT = $MameRoot
 $env:A51XR_OPENXR_SDK = $OpenXrSdk
 $env:A51XR_ONNXRUNTIME_DIR = $OnnxRuntimeDir
 
-Write-Host "[2/7] Building Area51XR with MSYS2/UCRT, OpenXR, and ONNX Runtime..."
+Write-Host "[2/8] Building Area51XR with MSYS2/UCRT, OpenXR, and ONNX Runtime..."
 $hostBuildCommand = @"
 export PATH=/ucrt64/bin:/usr/bin:`$PATH
 root="`$(cygpath -u "`$A51XR_ROOT")"
@@ -71,7 +71,7 @@ if ($LASTEXITCODE -ne 0) {
     throw "Area51XR build failed with exit code $LASTEXITCODE."
 }
 
-Write-Host "[3/7] Running Area51XR regression tests..."
+Write-Host "[3/8] Running Area51XR regression tests..."
 $hostTestCommand = @"
 export PATH=/ucrt64/bin:/usr/bin:`$PATH
 root="`$(cygpath -u "`$A51XR_ROOT")"
@@ -82,7 +82,10 @@ if ($LASTEXITCODE -ne 0) {
     throw "Area51XR tests failed with exit code $LASTEXITCODE."
 }
 
-Write-Host "[4/7] Running Depth Anything V2 ONNX self-test..."
+Write-Host "[4/8] Running synthetic reconstruction self-test..."
+& (Join-Path $PSScriptRoot "reconstruction-selftest.ps1")
+
+Write-Host "[5/8] Running Depth Anything V2 ONNX self-test..."
 $depthSelfTest = Join-Path $root "build-mingw\area51xr-depth-selftest.exe"
 if (-not (Test-Path $depthSelfTest)) {
     throw "Depth model self-test executable was not built."
@@ -92,7 +95,7 @@ if ($LASTEXITCODE -ne 0) {
     throw "Depth model self-test failed with exit code $LASTEXITCODE."
 }
 
-Write-Host "[5/7] Building Khronos OpenXR loader DLL..."
+Write-Host "[6/8] Building Khronos OpenXR loader DLL..."
 $loaderBuildCommand = @"
 export PATH=/ucrt64/bin:/usr/bin:`$PATH
 root="`$(cygpath -u "`$A51XR_ROOT")"
@@ -112,7 +115,7 @@ if (-not $loaderDll) {
 }
 Copy-Item $loaderDll (Join-Path $root "build-mingw\openxr_loader.dll") -Force
 
-Write-Host "[6/7] Building targeted MAME CoJag subtarget..."
+Write-Host "[7/8] Building targeted MAME CoJag subtarget..."
 $mameBuildCommand = @"
 export PATH=/ucrt64/bin:/usr/bin:`$PATH
 cd "`$(cygpath -u "`$A51XR_MAME_ROOT")"
@@ -123,7 +126,7 @@ if ($LASTEXITCODE -ne 0) {
     throw "MAME build failed with exit code $LASTEXITCODE."
 }
 
-Write-Host "[7/7] Locating and validating the MAME executable..."
+Write-Host "[8/8] Locating and validating the MAME executable..."
 $candidates = @(
     (Join-Path $MameRoot "mamearea51xr.exe"),
     (Join-Path $MameRoot "area51xr.exe")
