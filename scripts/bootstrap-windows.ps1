@@ -38,6 +38,16 @@ function Resolve-A51Path([string]$Path) {
     return [System.IO.Path]::GetFullPath((Join-Path (Get-Location) $Path))
 }
 
+function ConvertTo-MsysPath([string]$Path) {
+    $full = Resolve-A51Path $Path
+    if ($full -match '^([A-Za-z]):\\(.*)$') {
+        $drive = $matches[1].ToLowerInvariant()
+        $tail = $matches[2] -replace '\\', '/'
+        return "/$drive/$tail"
+    }
+    return ($full -replace '\\', '/')
+}
+
 function Ensure-A51ParentDirectory([string]$Target) {
     $fullTarget = Resolve-A51Path $Target
     $parent = [System.IO.Path]::GetDirectoryName($fullTarget)
@@ -65,6 +75,12 @@ $DepthModelPath = Resolve-A51Path $DepthModelPath
 if (-not [string]::IsNullOrWhiteSpace($RomPath)) {
     $RomPath = Resolve-A51Path $RomPath
 }
+
+Write-Host "Bootstrap root: $root"
+Write-Host "MAME root: $MameRoot"
+Write-Host "OpenXR SDK root: $OpenXrSdk"
+Write-Host "ONNX Runtime root: $OnnxRuntimeDir"
+Write-Host "Depth model: $DepthModelPath"
 
 function Get-MsysBashCandidatePaths([string]$PreferredRoot) {
     $paths = New-Object System.Collections.Generic.List[string]
@@ -157,12 +173,12 @@ function Clone-IfMissing([string]$Target, [string]$Url, [string]$Label) {
 
     Write-Host "Cloning $Label source..."
     Write-Host "Clone target: $Target"
-    $env:A51XR_CLONE_TARGET = $Target
+    $env:A51XR_CLONE_TARGET = ConvertTo-MsysPath $Target
     $env:A51XR_CLONE_URL = $Url
     $cloneCommand = @'
 export PATH=/ucrt64/bin:/usr/bin:$PATH
-target="$(cygpath -u "$A51XR_CLONE_TARGET")"
-git clone --depth 1 "$A51XR_CLONE_URL" "$target"
+mkdir -p "$(dirname "$A51XR_CLONE_TARGET")"
+git clone --depth 1 "$A51XR_CLONE_URL" "$A51XR_CLONE_TARGET"
 '@
     & $bash -lc $cloneCommand
     if ($LASTEXITCODE -ne 0) {
