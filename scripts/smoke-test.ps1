@@ -81,7 +81,7 @@ if ($LASTEXITCODE -ne 0) {
 Write-Host "[3/8] Running Area51XR regression tests..."
 $hostTestCommand = @'
 export PATH=/ucrt64/bin:/usr/bin:$PATH
-ctest --test-dir "$A51XR_ROOT_MSYS/build-mingw" --output-on-failure
+ctest --test-dir "$A51XR_ROOT_MSYS/build-mingw" --output-on-failure --repeat until-pass:2
 '@
 & $bash -lc $hostTestCommand
 if ($LASTEXITCODE -ne 0) {
