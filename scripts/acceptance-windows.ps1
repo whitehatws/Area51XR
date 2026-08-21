@@ -39,6 +39,7 @@ New-Item -ItemType Directory -Force -Path $acceptanceDir | Out-Null
 $summaryPath = Join-Path $acceptanceDir "summary.txt"
 $transcriptPath = Join-Path $acceptanceDir "transcript.txt"
 $script:transcriptActive = $false
+$env:A51XR_ACCEPTANCE_DIR = $acceptanceDir
 
 try {
     Start-Transcript -Path $transcriptPath -Force | Out-Null
@@ -132,4 +133,5 @@ catch {
 }
 finally {
     Stop-AcceptanceTranscript
+    Remove-Item Env:A51XR_ACCEPTANCE_DIR -ErrorAction SilentlyContinue
 }
