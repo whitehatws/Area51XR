@@ -1,5 +1,6 @@
 #include "area51xr/xr_runtime.h"
 
+#include <array>
 #include <cassert>
 #include <cmath>
 
@@ -39,7 +40,23 @@ int main() {
     assert(sampled.session_running);
     assert(sampled.pose_valid);
 
+    const std::array<area51xr::SpatialMeshVertexView, 3> vertices{{
+        {{0.0f, 0.0f, -1.0f}, 0.0f, 0.0f},
+        {{1.0f, 0.0f, -1.0f}, 1.0f, 0.0f},
+        {{0.0f, 1.0f, -1.0f}, 0.0f, 1.0f}
+    }};
+    const std::array<std::uint32_t, 3> indices{0, 1, 2};
+    area51xr::SpatialMeshView mesh{};
+    mesh.frame_number = 99;
+    mesh.vertices = vertices;
+    mesh.indices = indices;
+    assert(runtime.present_mesh(mesh));
+    assert(runtime.last_presented_mesh_frame() == 99);
+    assert(runtime.last_presented_mesh_vertices() == 3);
+    assert(runtime.last_presented_mesh_triangles() == 1);
+
     runtime.shutdown();
     assert(!runtime.poll(sampled));
+    assert(!runtime.present_mesh(mesh));
     return 0;
 }
