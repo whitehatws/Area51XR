@@ -46,5 +46,23 @@ int main() {
     assert(depth.size() == 4);
     assert(near(depth[0], 4.0f));
     assert(near(depth[3], 1.0f));
+
+    area51xr::RelativeDepthAnchorOptions anchor_options{};
+    anchor_options.smoothing_alpha = 0.5f;
+    anchor_options.reset_span_multiple = 10.0f;
+    area51xr::RelativeDepthAnchorTracker tracker(anchor_options);
+    area51xr::RelativeDepthStats anchors{};
+    assert(area51xr::depth_anything_v2_output_to_metric_stabilized(
+        model_output, 2, 2, 2, 2, depth, anchors, tracker, calibration));
+    assert(near(anchors.far_disparity, 1.0f));
+    assert(near(anchors.near_disparity, 4.0f));
+
+    const std::array<float, 4> shifted_output{2.0f, 3.0f, 4.0f, 5.0f};
+    assert(area51xr::depth_anything_v2_output_to_metric_stabilized(
+        shifted_output, 2, 2, 2, 2, depth, anchors, tracker, calibration));
+    assert(near(anchors.far_disparity, 1.5f));
+    assert(near(anchors.near_disparity, 4.5f));
+    assert(depth.front() > 1.0f);
+    assert(depth.back() < 1.1f);
     return 0;
 }
