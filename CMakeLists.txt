@@ -25,6 +25,7 @@ add_library(a51xr_core
     src/reconstruction/reconstruction_capture.cpp
     src/reconstruction/relative_depth.cpp
     src/reconstruction/depth_anything_v2.cpp
+    src/reconstruction/depth_inference.cpp
 )
 target_include_directories(a51xr_core PUBLIC src include)
 
@@ -109,4 +110,8 @@ if(BUILD_TESTING)
     add_executable(area51xr_depth_anything_v2_tests tests/depth_anything_v2_tests.cpp)
     target_link_libraries(area51xr_depth_anything_v2_tests PRIVATE a51xr_core)
     add_test(NAME depth_anything_v2 COMMAND area51xr_depth_anything_v2_tests)
+
+    add_executable(area51xr_depth_inference_tests tests/depth_inference_tests.cpp)
+    target_link_libraries(area51xr_depth_inference_tests PRIVATE a51xr_core)
+    add_test(NAME depth_inference COMMAND area51xr_depth_inference_tests)
 endif()
