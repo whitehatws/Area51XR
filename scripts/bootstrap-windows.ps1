@@ -138,6 +138,13 @@ if (-not [string]::IsNullOrWhiteSpace($RomPath)) {
         -RomPath $RomPath `
         -DepthModelPath $DepthModelPath
 
+    Write-Host "Running desktop reconstruction sequence capture..."
+    & (Join-Path $PSScriptRoot "capture-mame-sequence.ps1") `
+        -MameExe $mameExe `
+        -RomPath $RomPath `
+        -DepthModelPath $DepthModelPath `
+        -FrameCount 4
+
     Write-Host "Running live Area 51 bridge test..."
     & (Join-Path $PSScriptRoot "live-mame-test.ps1") -MameExe $mameExe -RomPath $RomPath
 }
@@ -145,5 +152,5 @@ else {
     Write-Host ""
     Write-Host "Build setup is complete."
     Write-Host "Depth model: $DepthModelPath"
-    Write-Host "When Area 51 game files are available, rerun with -RomPath <folder> for capture, reconstruction, and live bridge tests."
+    Write-Host "When Area 51 game files are available, rerun with -RomPath <folder> for capture, reconstruction, sequence, and live bridge tests."
 }
