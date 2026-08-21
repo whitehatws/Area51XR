@@ -5,10 +5,12 @@ namespace area51xr {
 DepthAnythingV2Provider::DepthAnythingV2Provider(
     TensorInferenceBackend& backend,
     std::uint32_t input_size,
-    RelativeDepthCalibration calibration)
+    RelativeDepthCalibration calibration,
+    RelativeDepthAnchorOptions anchor_options)
     : backend_(backend),
       input_size_(input_size),
-      calibration_(calibration) {}
+      calibration_(calibration),
+      anchor_tracker_(anchor_options) {}
 
 bool DepthAnythingV2Provider::estimate(const ColorFrameView& frame, DepthEstimate& output) {
     output = {};
@@ -32,7 +34,7 @@ bool DepthAnythingV2Provider::estimate(const ColorFrameView& frame, DepthEstimat
 
     output.width = frame.width;
     output.height = frame.height;
-    if (!depth_anything_v2_output_to_metric(
+    if (!depth_anything_v2_output_to_metric_stabilized(
             raw_output_,
             raw_width,
             raw_height,
@@ -40,6 +42,7 @@ bool DepthAnythingV2Provider::estimate(const ColorFrameView& frame, DepthEstimat
             frame.height,
             output.depth_m,
             stats_,
+            anchor_tracker_,
             calibration_)) {
         output = {};
         return false;
@@ -49,6 +52,14 @@ bool DepthAnythingV2Provider::estimate(const ColorFrameView& frame, DepthEstimat
 
 const RelativeDepthStats& DepthAnythingV2Provider::last_stats() const noexcept {
     return stats_;
+}
+
+const RelativeDepthStats& DepthAnythingV2Provider::anchors() const noexcept {
+    return anchor_tracker_.anchors();
+}
+
+void DepthAnythingV2Provider::reset_anchors() noexcept {
+    anchor_tracker_.reset();
 }
 
 } // namespace area51xr
