@@ -1,6 +1,14 @@
 #include "area51xr/onnx_depth_backend.h"
 
+#ifdef _WIN32
+#define WIN32_LEAN_AND_MEAN
+#define NOMINMAX
+#include <windows.h>
+#endif
+
+#define ORT_API_MANUAL_INIT
 #include <onnxruntime_cxx_api.h>
+#undef ORT_API_MANUAL_INIT
 
 #include <array>
 #include <cstring>
@@ -8,21 +16,62 @@
 
 namespace area51xr {
 
+namespace {
+
+#ifdef _WIN32
+using OrtGetApiBaseFn = const OrtApiBase* (ORT_API_CALL*)();
+#endif
+
+} // namespace
+
 struct OnnxRuntimeBackend::Impl {
-    Ort::Env env{ORT_LOGGING_LEVEL_WARNING, "Area51XR"};
-    Ort::SessionOptions options;
+#ifdef _WIN32
+    HMODULE runtime_module{};
+#endif
+    std::unique_ptr<Ort::Env> env;
+    std::unique_ptr<Ort::SessionOptions> options;
     std::unique_ptr<Ort::Session> session;
     std::string input_name;
     std::string output_name;
     std::string error;
 
-    Impl(const std::filesystem::path& model_path) {
-        try {
-            options.SetGraphOptimizationLevel(GraphOptimizationLevel::ORT_ENABLE_ALL);
+    explicit Impl(const std::filesystem::path& model_path) {
 #ifdef _WIN32
-            session = std::make_unique<Ort::Session>(env, model_path.wstring().c_str(), options);
+        runtime_module = LoadLibraryW(L"onnxruntime.dll");
+        if (!runtime_module) {
+            error = "failed to load onnxruntime.dll (Win32 error " +
+                std::to_string(static_cast<unsigned long>(GetLastError())) + ")";
+            return;
+        }
+
+        const auto get_api_base = reinterpret_cast<OrtGetApiBaseFn>(
+            GetProcAddress(runtime_module, "OrtGetApiBase"));
+        if (!get_api_base) {
+            error = "onnxruntime.dll does not export OrtGetApiBase";
+            FreeLibrary(runtime_module);
+            runtime_module = nullptr;
+            return;
+        }
+
+        const OrtApiBase* api_base = get_api_base();
+        const OrtApi* api = api_base ? api_base->GetApi(ORT_API_VERSION) : nullptr;
+        if (!api) {
+            error = "onnxruntime.dll does not support the requested ORT API version";
+            FreeLibrary(runtime_module);
+            runtime_module = nullptr;
+            return;
+        }
+        Ort::InitApi(api);
+#endif
+
+        try {
+            env = std::make_unique<Ort::Env>(ORT_LOGGING_LEVEL_WARNING, "Area51XR");
+            options = std::make_unique<Ort::SessionOptions>();
+            options->SetGraphOptimizationLevel(GraphOptimizationLevel::ORT_ENABLE_ALL);
+#ifdef _WIN32
+            session = std::make_unique<Ort::Session>(*env, model_path.wstring().c_str(), *options);
 #else
-            session = std::make_unique<Ort::Session>(env, model_path.string().c_str(), options);
+            session = std::make_unique<Ort::Session>(*env, model_path.string().c_str(), *options);
 #endif
             Ort::AllocatorWithDefaultOptions allocator;
             auto input = session->GetInputNameAllocated(0, allocator);
@@ -37,7 +86,21 @@ struct OnnxRuntimeBackend::Impl {
         } catch (const Ort::Exception& ex) {
             error = ex.what();
             session.reset();
+            options.reset();
+            env.reset();
         }
+    }
+
+    ~Impl() {
+        session.reset();
+        options.reset();
+        env.reset();
+#ifdef _WIN32
+        if (runtime_module) {
+            FreeLibrary(runtime_module);
+            runtime_module = nullptr;
+        }
+#endif
     }
 };
 
