@@ -12,6 +12,8 @@ param(
 
     [string]$DepthModelPath = "",
 
+    [switch]$RunVr,
+
     [switch]$SkipVr
 )
 
@@ -41,6 +43,13 @@ function Package-Diagnostics {
 try {
     Write-Step "Area51XR Windows acceptance started."
     Write-Step "ROM path: $RomPath"
+
+    if ($RunVr -and $SkipVr) {
+        throw "Use either -RunVr or -SkipVr, not both."
+    }
+    if ($RunVr) {
+        Write-Step "VR acceptance explicitly enabled."
+    }
 
     $bootstrapArgs = @(
         "-MsysRoot", $MsysRoot,
