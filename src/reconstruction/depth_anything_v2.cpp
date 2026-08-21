@@ -53,6 +53,33 @@ float sample_scalar(
     return top + (bottom - top) * ty;
 }
 
+bool resize_disparity(
+    std::span<const float> model_disparity,
+    std::uint32_t model_width,
+    std::uint32_t model_height,
+    std::uint32_t output_width,
+    std::uint32_t output_height,
+    std::vector<float>& resized) {
+    resized.clear();
+    if (model_width == 0 || model_height == 0 || output_width == 0 || output_height == 0 ||
+        model_disparity.size() != static_cast<std::size_t>(model_width) * model_height) {
+        return false;
+    }
+
+    resized.resize(static_cast<std::size_t>(output_width) * output_height);
+    for (std::uint32_t y = 0; y < output_height; ++y) {
+        const float source_y = (static_cast<float>(y) + 0.5f) *
+            static_cast<float>(model_height) / static_cast<float>(output_height) - 0.5f;
+        for (std::uint32_t x = 0; x < output_width; ++x) {
+            const float source_x = (static_cast<float>(x) + 0.5f) *
+                static_cast<float>(model_width) / static_cast<float>(output_width) - 0.5f;
+            resized[static_cast<std::size_t>(y) * output_width + x] =
+                sample_scalar(model_disparity, model_width, model_height, source_x, source_y);
+        }
+    }
+    return true;
+}
+
 } // namespace
 
 bool preprocess_depth_anything_v2(
@@ -104,23 +131,36 @@ bool depth_anything_v2_output_to_metric(
     const RelativeDepthCalibration& calibration) {
     depth_m.clear();
     stats = {};
-    if (model_width == 0 || model_height == 0 || output_width == 0 || output_height == 0 ||
-        model_disparity.size() != static_cast<std::size_t>(model_width) * model_height) {
+    std::vector<float> resized;
+    if (!resize_disparity(model_disparity, model_width, model_height, output_width, output_height, resized)) {
+        return false;
+    }
+    return relative_disparity_to_metric_depth(resized, depth_m, stats, calibration);
+}
+
+bool depth_anything_v2_output_to_metric_stabilized(
+    std::span<const float> model_disparity,
+    std::uint32_t model_width,
+    std::uint32_t model_height,
+    std::uint32_t output_width,
+    std::uint32_t output_height,
+    std::vector<float>& depth_m,
+    RelativeDepthStats& anchors_used,
+    RelativeDepthAnchorTracker& anchor_tracker,
+    const RelativeDepthCalibration& calibration) {
+    depth_m.clear();
+    anchors_used = {};
+    std::vector<float> resized;
+    if (!resize_disparity(model_disparity, model_width, model_height, output_width, output_height, resized)) {
         return false;
     }
 
-    std::vector<float> resized(static_cast<std::size_t>(output_width) * output_height);
-    for (std::uint32_t y = 0; y < output_height; ++y) {
-        const float source_y = (static_cast<float>(y) + 0.5f) *
-            static_cast<float>(model_height) / static_cast<float>(output_height) - 0.5f;
-        for (std::uint32_t x = 0; x < output_width; ++x) {
-            const float source_x = (static_cast<float>(x) + 0.5f) *
-                static_cast<float>(model_width) / static_cast<float>(output_width) - 0.5f;
-            resized[static_cast<std::size_t>(y) * output_width + x] =
-                sample_scalar(model_disparity, model_width, model_height, source_x, source_y);
-        }
+    RelativeDepthStats candidate{};
+    if (!analyze_relative_disparity(resized, candidate, calibration)) {
+        return false;
     }
-    return relative_disparity_to_metric_depth(resized, depth_m, stats, calibration);
+    anchors_used = anchor_tracker.update(candidate);
+    return map_relative_disparity_to_metric_depth(resized, depth_m, anchors_used, calibration);
 }
 
 } // namespace area51xr
