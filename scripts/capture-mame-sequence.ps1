@@ -112,7 +112,12 @@ try {
             throw "Reconstruction failed quality gates on frame $index with exit code $LASTEXITCODE. See $qualityPath"
         }
 
-        $entry = "{`"index`":$i,`"capture`":`"$capturePath`",`"mesh`":`"$objPath`",`"quality`":`"$qualityPath`"}"
+        $entry = [ordered]@{
+            index = $i
+            capture = $capturePath
+            mesh = $objPath
+            quality = $qualityPath
+        } | ConvertTo-Json -Compress
         Add-Content -Path $manifestPath -Value $entry
 
         if ($i + 1 -lt $FrameCount -and $IntervalMs -gt 0) {
