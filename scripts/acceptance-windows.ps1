@@ -37,6 +37,16 @@ $stamp = Get-Date -Format "yyyyMMdd-HHmmss"
 $acceptanceDir = Join-Path $root "logs\acceptance-$stamp"
 New-Item -ItemType Directory -Force -Path $acceptanceDir | Out-Null
 $summaryPath = Join-Path $acceptanceDir "summary.txt"
+$transcriptPath = Join-Path $acceptanceDir "transcript.txt"
+$script:transcriptActive = $false
+
+try {
+    Start-Transcript -Path $transcriptPath -Force | Out-Null
+    $script:transcriptActive = $true
+}
+catch {
+    Write-Host "Warning: unable to start PowerShell transcript: $_"
+}
 
 function Write-Step([string]$Text) {
     $line = "[$(Get-Date -Format o)] $Text"
@@ -44,7 +54,20 @@ function Write-Step([string]$Text) {
     Add-Content -Path $summaryPath -Value $line
 }
 
+function Stop-AcceptanceTranscript {
+    if ($script:transcriptActive) {
+        try {
+            Stop-Transcript | Out-Null
+        }
+        catch {
+            Write-Host "Warning: unable to stop PowerShell transcript: $_"
+        }
+        $script:transcriptActive = $false
+    }
+}
+
 function Package-Diagnostics {
+    Stop-AcceptanceTranscript
     try {
         & (Join-Path $PSScriptRoot "package-diagnostics.ps1") -InputDir $acceptanceDir | Out-Host
     }
@@ -106,4 +129,7 @@ catch {
     Write-Step "Area51XR Windows acceptance failed: $_"
     Package-Diagnostics
     throw
+}
+finally {
+    Stop-AcceptanceTranscript
 }
