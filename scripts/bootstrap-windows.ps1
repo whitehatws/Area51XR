@@ -28,6 +28,44 @@ if ([string]::IsNullOrWhiteSpace($DepthModelPath)) {
     $DepthModelPath = Join-Path $root "models\depth_anything_v2_vits.onnx"
 }
 
+function Resolve-A51Path([string]$Path) {
+    if ([string]::IsNullOrWhiteSpace($Path)) {
+        throw "Path value is empty."
+    }
+    if ([System.IO.Path]::IsPathRooted($Path)) {
+        return [System.IO.Path]::GetFullPath($Path)
+    }
+    return [System.IO.Path]::GetFullPath((Join-Path (Get-Location) $Path))
+}
+
+function Ensure-A51ParentDirectory([string]$Target) {
+    $fullTarget = Resolve-A51Path $Target
+    $parent = [System.IO.Path]::GetDirectoryName($fullTarget)
+    if ([string]::IsNullOrWhiteSpace($parent)) {
+        throw "Unable to determine parent directory for '$fullTarget'."
+    }
+    $rootPath = [System.IO.Path]::GetPathRoot($fullTarget)
+    if ($parent.TrimEnd('\') -eq $rootPath.TrimEnd('\')) {
+        if (-not (Test-Path $parent)) {
+            throw "Drive root does not exist for '$fullTarget'."
+        }
+        return $fullTarget
+    }
+    if (-not (Test-Path $parent)) {
+        Write-Host "Creating directory: $parent"
+        New-Item -ItemType Directory -Force -Path $parent | Out-Null
+    }
+    return $fullTarget
+}
+
+$MameRoot = Resolve-A51Path $MameRoot
+$OpenXrSdk = Resolve-A51Path $OpenXrSdk
+$OnnxRuntimeDir = Resolve-A51Path $OnnxRuntimeDir
+$DepthModelPath = Resolve-A51Path $DepthModelPath
+if (-not [string]::IsNullOrWhiteSpace($RomPath)) {
+    $RomPath = Resolve-A51Path $RomPath
+}
+
 function Get-MsysBashCandidatePaths([string]$PreferredRoot) {
     $paths = New-Object System.Collections.Generic.List[string]
     if (-not [string]::IsNullOrWhiteSpace($PreferredRoot)) {
@@ -111,14 +149,14 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 function Clone-IfMissing([string]$Target, [string]$Url, [string]$Label) {
+    $Target = Ensure-A51ParentDirectory $Target
     if (Test-Path (Join-Path $Target ".git")) {
         Write-Host "Using existing $Label source at $Target"
         return
     }
 
     Write-Host "Cloning $Label source..."
-    $parent = Split-Path -Parent $Target
-    New-Item -ItemType Directory -Force -Path $parent | Out-Null
+    Write-Host "Clone target: $Target"
     $env:A51XR_CLONE_TARGET = $Target
     $env:A51XR_CLONE_URL = $Url
     $cloneCommand = @'
@@ -133,13 +171,13 @@ git clone --depth 1 "$A51XR_CLONE_URL" "$target"
 }
 
 function Download-File([string]$Url, [string]$Target, [string]$Label) {
+    $Target = Ensure-A51ParentDirectory $Target
     if (Test-Path $Target) {
         Write-Host "Using existing $Label at $Target"
         return
     }
     Write-Host "Downloading $Label..."
-    $parent = Split-Path -Parent $Target
-    New-Item -ItemType Directory -Force -Path $parent | Out-Null
+    Write-Host "Download target: $Target"
     Invoke-WebRequest -Uri $Url -OutFile $Target -UseBasicParsing
 }
 
