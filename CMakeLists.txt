@@ -63,6 +63,9 @@ endif()
 add_executable(area51xr src/main.cpp)
 target_link_libraries(area51xr PRIVATE a51xr_core)
 
+add_executable(area51xr-generate-capture src/tools/generate_capture.cpp)
+target_link_libraries(area51xr-generate-capture PRIVATE a51xr_core)
+
 add_executable(area51xr-reconstruct src/tools/reconstruct_capture.cpp)
 target_link_libraries(area51xr-reconstruct PRIVATE a51xr_core)
 
@@ -70,7 +73,7 @@ if(A51XR_ORT_DLL AND EXISTS "${A51XR_ORT_DLL}")
     add_executable(area51xr-depth-selftest src/tools/depth_model_selftest.cpp)
     target_link_libraries(area51xr-depth-selftest PRIVATE a51xr_core)
 
-    foreach(target_name IN ITEMS area51xr area51xr-reconstruct area51xr-depth-selftest)
+    foreach(target_name IN ITEMS area51xr area51xr-generate-capture area51xr-reconstruct area51xr-depth-selftest)
         add_custom_command(TARGET ${target_name} POST_BUILD
             COMMAND ${CMAKE_COMMAND} -E copy_if_different
                 "${A51XR_ORT_DLL}" "$<TARGET_FILE_DIR:${target_name}>/onnxruntime.dll")
