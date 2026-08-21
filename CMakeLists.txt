@@ -30,6 +30,7 @@ add_library(a51xr_core
     src/reconstruction/mesh_io.cpp
     src/reconstruction/reconstruction_quality.cpp
     src/reconstruction/reconstruction_presenter.cpp
+    src/reconstruction/spatial_reconstruction_host.cpp
 )
 target_include_directories(a51xr_core PUBLIC src include)
 
@@ -157,4 +158,8 @@ if(BUILD_TESTING)
     add_executable(area51xr_reconstruction_presenter_tests tests/reconstruction_presenter_tests.cpp)
     target_link_libraries(area51xr_reconstruction_presenter_tests PRIVATE a51xr_core)
     add_test(NAME reconstruction_presenter COMMAND area51xr_reconstruction_presenter_tests)
+
+    add_executable(area51xr_spatial_reconstruction_host_tests tests/spatial_reconstruction_host_tests.cpp)
+    target_link_libraries(area51xr_spatial_reconstruction_host_tests PRIVATE a51xr_core)
+    add_test(NAME spatial_reconstruction_host COMMAND area51xr_spatial_reconstruction_host_tests)
 endif()
