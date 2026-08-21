@@ -17,10 +17,11 @@ if (-not [string]::IsNullOrWhiteSpace($parent)) {
 }
 
 $cutoff = (Get-Date).AddMinutes(-[Math]::Abs($LookbackMinutes))
-$targets = @(
-    "area51xr_mame_ipc_tests.exe",
-    "area51xr_depth_mesh_tests.exe"
-)
+$targets = @()
+if (Test-Path $build) {
+    $targets = Get-ChildItem -Path $build -Filter "area51xr*.exe" -File -ErrorAction SilentlyContinue |
+        Sort-Object Name
+}
 
 $lines = New-Object System.Collections.Generic.List[string]
 function Add-Line([string]$Text = "") {
@@ -34,17 +35,14 @@ Add-Line "Cutoff: $($cutoff.ToString('o'))"
 Add-Line
 
 Add-Line "=== TARGET FILES ==="
-foreach ($name in $targets) {
-    $path = Join-Path $build $name
-    Add-Line "[$name]"
-    if (-not (Test-Path $path)) {
-        Add-Line "missing: $path"
-        Add-Line
-        continue
-    }
-
-    $item = Get-Item $path
-    Add-Line "path: $($item.FullName)"
+if (-not $targets) {
+    Add-Line "No Area51XR executables found."
+    Add-Line
+}
+foreach ($item in $targets) {
+    $path = $item.FullName
+    Add-Line "[$($item.Name)]"
+    Add-Line "path: $path"
     Add-Line "size: $($item.Length)"
     Add-Line "last_write: $($item.LastWriteTime.ToString('o'))"
 
