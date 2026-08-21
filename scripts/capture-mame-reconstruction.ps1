@@ -5,6 +5,8 @@ param(
     [Parameter(Mandatory = $true)]
     [string]$RomPath,
 
+    [string]$DepthModelPath = "",
+
     [string]$OutputDir = "",
 
     [int]$StartupSeconds = 12,
@@ -24,7 +26,11 @@ if ([string]::IsNullOrWhiteSpace($OutputDir)) {
     $OutputDir = Join-Path $root "logs\capture-$stamp"
 }
 
-foreach ($path in @($hostExe, $captureExe, $reconstructExe, $MameExe, $RomPath)) {
+$required = @($hostExe, $captureExe, $reconstructExe, $MameExe, $RomPath)
+if (-not [string]::IsNullOrWhiteSpace($DepthModelPath)) {
+    $required += $DepthModelPath
+}
+foreach ($path in $required) {
     if (-not (Test-Path $path)) {
         throw "Required path not found: $path"
     }
@@ -72,7 +78,11 @@ try {
     }
 
     Write-Host "Capturing shared framebuffer..."
-    & $captureExe $capturePath $CaptureTimeoutMs
+    $captureArgs = @($capturePath, $CaptureTimeoutMs)
+    if (-not [string]::IsNullOrWhiteSpace($DepthModelPath)) {
+        $captureArgs += $DepthModelPath
+    }
+    & $captureExe @captureArgs
     if ($LASTEXITCODE -ne 0) {
         throw "Bridge capture failed with exit code $LASTEXITCODE."
     }
@@ -88,6 +98,7 @@ try {
         "Capture: $capturePath",
         "Mesh:    $objPath",
         "Quality: $qualityPath",
+        "Depth:   $([string]::IsNullOrWhiteSpace($DepthModelPath) ? 'synthetic' : $DepthModelPath)",
         "Logs:    $OutputDir"
     ) -join [Environment]::NewLine
     Set-Content -Path $resultPath -Value $result
