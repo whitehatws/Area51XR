@@ -35,5 +35,36 @@ int main() {
 
     const std::array<float, 3> flat{2.0f, 2.0f, 2.0f};
     assert(!area51xr::relative_disparity_to_metric_depth(flat, depth, stats, calibration));
+
+    area51xr::RelativeDepthStats analyzed{};
+    assert(area51xr::analyze_relative_disparity(disparity, analyzed, calibration));
+    assert(area51xr::map_relative_disparity_to_metric_depth(disparity, depth, analyzed, calibration));
+    assert(near(depth.front(), 4.0f));
+    assert(near(depth.back(), 1.0f));
+
+    area51xr::RelativeDepthAnchorOptions anchor_options{};
+    anchor_options.smoothing_alpha = 0.25f;
+    anchor_options.reset_span_multiple = 2.0f;
+    area51xr::RelativeDepthAnchorTracker tracker(anchor_options);
+
+    const auto first = tracker.update({1.0f, 5.0f, 100});
+    assert(tracker.initialized());
+    assert(near(first.far_disparity, 1.0f));
+    assert(near(first.near_disparity, 5.0f));
+
+    const auto smoothed = tracker.update({1.4f, 5.4f, 100});
+    assert(near(smoothed.far_disparity, 1.1f));
+    assert(near(smoothed.near_disparity, 5.1f));
+
+    const auto retained = tracker.update({0.0f, 0.0f, 0});
+    assert(near(retained.far_disparity, 1.1f));
+    assert(near(retained.near_disparity, 5.1f));
+
+    const auto reset = tracker.update({20.0f, 30.0f, 100});
+    assert(near(reset.far_disparity, 20.0f));
+    assert(near(reset.near_disparity, 30.0f));
+
+    tracker.reset();
+    assert(!tracker.initialized());
     return 0;
 }
