@@ -6,6 +6,8 @@ param(
 
     [string]$OpenXrSdk = "",
 
+    [string]$OnnxRuntimeDir = "",
+
     [int]$Jobs = 0
 )
 
@@ -18,6 +20,9 @@ $mameSource = Join-Path $MameRoot "src\mame\atari\jaguar.cpp"
 if ([string]::IsNullOrWhiteSpace($OpenXrSdk)) {
     $OpenXrSdk = Join-Path $root "external\openxr-sdk"
 }
+if ([string]::IsNullOrWhiteSpace($OnnxRuntimeDir)) {
+    $OnnxRuntimeDir = Join-Path $root "external\onnxruntime-1.28.0"
+}
 
 if (-not (Test-Path $bash)) {
     throw "MSYS2 bash not found at '$bash'."
@@ -27,6 +32,9 @@ if (-not (Test-Path $mameSource)) {
 }
 if (-not (Test-Path (Join-Path $OpenXrSdk "include\openxr\openxr.h"))) {
     throw "OpenXR SDK headers not found at '$OpenXrSdk'."
+}
+if (-not (Test-Path (Join-Path $OnnxRuntimeDir "build\native\include\onnxruntime_cxx_api.h"))) {
+    throw "ONNX Runtime C++ headers not found at '$OnnxRuntimeDir'."
 }
 
 if ($Jobs -le 0) {
@@ -39,13 +47,15 @@ Write-Host "[1/6] Applying Area51XR MAME integration..."
 $env:A51XR_ROOT = $root
 $env:A51XR_MAME_ROOT = $MameRoot
 $env:A51XR_OPENXR_SDK = $OpenXrSdk
+$env:A51XR_ONNXRUNTIME_DIR = $OnnxRuntimeDir
 
-Write-Host "[2/6] Building Area51XR with MSYS2/UCRT and OpenXR..."
+Write-Host "[2/6] Building Area51XR with MSYS2/UCRT, OpenXR, and ONNX Runtime..."
 $hostBuildCommand = @"
 export PATH=/ucrt64/bin:/usr/bin:`$PATH
 root="`$(cygpath -u "`$A51XR_ROOT")"
 sdk="`$(cygpath -u "`$A51XR_OPENXR_SDK")"
-cmake -S "`$root" -B "`$root/build-mingw" -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo -DA51XR_OPENXR_SDK="`$sdk"
+ort="`$(cygpath -u "`$A51XR_ONNXRUNTIME_DIR")"
+cmake -S "`$root" -B "`$root/build-mingw" -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo -DA51XR_OPENXR_SDK="`$sdk" -DA51XR_ONNXRUNTIME_DIR="`$ort"
 cmake --build "`$root/build-mingw" -j$Jobs
 "@
 & $bash -lc $hostBuildCommand
@@ -118,9 +128,14 @@ $hostExe = Join-Path $root "build-mingw\area51xr.exe"
 if (-not (Test-Path $hostExe)) {
     throw "Area51XR host was not found at '$hostExe'."
 }
+$ortDll = Join-Path $root "build-mingw\onnxruntime.dll"
+if (-not (Test-Path $ortDll)) {
+    throw "Area51XR build completed without the expected onnxruntime.dll."
+}
 
 Write-Host ""
 Write-Host "Smoke test passed."
 Write-Host "Area51XR host:  $hostExe"
 Write-Host "Patched MAME:  $mameExe"
 Write-Host "OpenXR loader: $(Join-Path $root 'build-mingw\openxr_loader.dll')"
+Write-Host "ONNX Runtime:  $ortDll"
