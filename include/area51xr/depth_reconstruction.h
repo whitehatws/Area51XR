@@ -19,8 +19,15 @@ struct DepthReconstructionOptions {
 
 struct DepthReconstructionStats {
     std::uint64_t frame_number{};
+    std::size_t total_samples{};
+    std::size_t confident_samples{};
     std::size_t valid_depth_samples{};
     std::size_t mesh_triangles{};
+    std::size_t mesh_max_triangles{};
+    std::size_t rejected_triangles{};
+    float confident_sample_ratio{};
+    float valid_depth_ratio{};
+    float mesh_triangle_ratio{};
     bool scene_cut_reset{};
 };
 
