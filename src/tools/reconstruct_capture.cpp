@@ -78,9 +78,11 @@ int main(int argc, char** argv) {
 
     const std::filesystem::path input_path = argv[1];
     const std::filesystem::path output_path = argv[2];
+    std::filesystem::path default_report_path = output_path;
+    default_report_path.replace_extension(".quality.json");
     const std::filesystem::path report_path = argc == 4
         ? std::filesystem::path{argv[3]}
-        : output_path.replace_extension(".quality.json");
+        : default_report_path;
 
     std::ifstream in(input_path, std::ios::binary);
     if (!in) {
