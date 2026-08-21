@@ -38,16 +38,6 @@ function Resolve-A51Path([string]$Path) {
     return [System.IO.Path]::GetFullPath((Join-Path (Get-Location) $Path))
 }
 
-function ConvertTo-MsysPath([string]$Path) {
-    $full = Resolve-A51Path $Path
-    if ($full -match '^([A-Za-z]):\\(.*)$') {
-        $drive = $matches[1].ToLowerInvariant()
-        $tail = $matches[2] -replace '\\', '/'
-        return "/$drive/$tail"
-    }
-    return ($full -replace '\\', '/')
-}
-
 function Ensure-A51ParentDirectory([string]$Target) {
     $fullTarget = Resolve-A51Path $Target
     $parent = [System.IO.Path]::GetDirectoryName($fullTarget)
@@ -66,6 +56,24 @@ function Ensure-A51ParentDirectory([string]$Target) {
         New-Item -ItemType Directory -Force -Path $parent | Out-Null
     }
     return $fullTarget
+}
+
+function Find-WindowsGit {
+    $command = Get-Command git.exe -ErrorAction SilentlyContinue
+    if ($command) {
+        return $command.Source
+    }
+
+    foreach ($candidate in @(
+        (Join-Path $env:ProgramFiles "Git\cmd\git.exe"),
+        (Join-Path $env:ProgramFiles "Git\bin\git.exe"),
+        (Join-Path $env:LOCALAPPDATA "Programs\Git\cmd\git.exe")
+    )) {
+        if (-not [string]::IsNullOrWhiteSpace($candidate) -and (Test-Path $candidate)) {
+            return $candidate
+        }
+    }
+    return ""
 }
 
 $MameRoot = Resolve-A51Path $MameRoot
@@ -164,6 +172,12 @@ if ($LASTEXITCODE -ne 0) {
     throw "MSYS2 package installation failed with exit code $LASTEXITCODE."
 }
 
+$windowsGit = Find-WindowsGit
+if ([string]::IsNullOrWhiteSpace($windowsGit)) {
+    throw "Windows Git was not found. Install Git for Windows and rerun the acceptance script."
+}
+Write-Host "Using Git at $windowsGit"
+
 function Clone-IfMissing([string]$Target, [string]$Url, [string]$Label) {
     $Target = Ensure-A51ParentDirectory $Target
     if (Test-Path (Join-Path $Target ".git")) {
@@ -171,18 +185,24 @@ function Clone-IfMissing([string]$Target, [string]$Url, [string]$Label) {
         return
     }
 
+    if (Test-Path $Target) {
+        $existing = @(Get-ChildItem -Force -Path $Target -ErrorAction SilentlyContinue)
+        if ($existing.Count -eq 0) {
+            Remove-Item -Force -Path $Target
+        }
+        else {
+            throw "$Label target exists but is not a Git checkout: $Target"
+        }
+    }
+
     Write-Host "Cloning $Label source..."
     Write-Host "Clone target: $Target"
-    $env:A51XR_CLONE_TARGET = ConvertTo-MsysPath $Target
-    $env:A51XR_CLONE_URL = $Url
-    $cloneCommand = @'
-export PATH=/ucrt64/bin:/usr/bin:$PATH
-mkdir -p "$(dirname "$A51XR_CLONE_TARGET")"
-git clone --depth 1 "$A51XR_CLONE_URL" "$A51XR_CLONE_TARGET"
-'@
-    & $bash -lc $cloneCommand
+    & $windowsGit clone --depth 1 -- $Url $Target
     if ($LASTEXITCODE -ne 0) {
         throw "$Label source clone failed with exit code $LASTEXITCODE."
+    }
+    if (-not (Test-Path (Join-Path $Target ".git"))) {
+        throw "$Label clone completed without a .git directory at $Target"
     }
 }
 
