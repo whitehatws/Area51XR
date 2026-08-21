@@ -35,5 +35,11 @@ if (Test-Path $OutputZip) {
     Remove-Item $OutputZip -Force
 }
 
+$items = Get-ChildItem -Path $InputDir -Force
+if (-not $items) {
+    $placeholder = Join-Path $InputDir "empty.txt"
+    Set-Content -Path $placeholder -Value "No diagnostic files were produced."
+}
+
 Compress-Archive -Path (Join-Path $InputDir "*") -DestinationPath $OutputZip -Force
 Write-Host "Diagnostics package: $OutputZip"
