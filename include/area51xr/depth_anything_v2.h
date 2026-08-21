@@ -30,4 +30,15 @@ bool depth_anything_v2_output_to_metric(
     RelativeDepthStats& stats,
     const RelativeDepthCalibration& calibration = {});
 
+bool depth_anything_v2_output_to_metric_stabilized(
+    std::span<const float> model_disparity,
+    std::uint32_t model_width,
+    std::uint32_t model_height,
+    std::uint32_t output_width,
+    std::uint32_t output_height,
+    std::vector<float>& depth_m,
+    RelativeDepthStats& anchors_used,
+    RelativeDepthAnchorTracker& anchor_tracker,
+    const RelativeDepthCalibration& calibration = {});
+
 } // namespace area51xr
