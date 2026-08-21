@@ -29,6 +29,7 @@ add_library(a51xr_core
     src/reconstruction/depth_inference.cpp
     src/reconstruction/mesh_io.cpp
     src/reconstruction/reconstruction_quality.cpp
+    src/reconstruction/reconstruction_presenter.cpp
 )
 target_include_directories(a51xr_core PUBLIC src include)
 
@@ -152,4 +153,8 @@ if(BUILD_TESTING)
     add_executable(area51xr_reconstruction_quality_tests tests/reconstruction_quality_tests.cpp)
     target_link_libraries(area51xr_reconstruction_quality_tests PRIVATE a51xr_core)
     add_test(NAME reconstruction_quality COMMAND area51xr_reconstruction_quality_tests)
+
+    add_executable(area51xr_reconstruction_presenter_tests tests/reconstruction_presenter_tests.cpp)
+    target_link_libraries(area51xr_reconstruction_presenter_tests PRIVATE a51xr_core)
+    add_test(NAME reconstruction_presenter COMMAND area51xr_reconstruction_presenter_tests)
 endif()
