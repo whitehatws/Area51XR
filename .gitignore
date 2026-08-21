@@ -1,15 +1,19 @@
 /build/
+/build-mingw/
 /.vs/
 /.vscode/
 /external/
 /logs/
+/models/
 *.user
 *.suo
 *.log
 
-# Original game files and captures never belong in source control.
+# Original game files, captures, and generated reconstruction output never belong in source control.
 roms/
 game/
 captures/
 *.chd
 *.zip
+*.a51cap
+*.obj
