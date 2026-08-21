@@ -28,19 +28,77 @@ if ([string]::IsNullOrWhiteSpace($DepthModelPath)) {
     $DepthModelPath = Join-Path $root "models\depth_anything_v2_vits.onnx"
 }
 
-$bash = Join-Path $MsysRoot "usr\bin\bash.exe"
+function Get-MsysBashCandidatePaths([string]$PreferredRoot) {
+    $paths = New-Object System.Collections.Generic.List[string]
+    if (-not [string]::IsNullOrWhiteSpace($PreferredRoot)) {
+        $paths.Add((Join-Path $PreferredRoot "usr\bin\bash.exe"))
+    }
+    foreach ($candidateRoot in @(
+        "C:\msys64",
+        "C:\msys2",
+        (Join-Path $env:ProgramFiles "MSYS2"),
+        (Join-Path ${env:ProgramFiles(x86)} "MSYS2"),
+        (Join-Path $env:LOCALAPPDATA "Programs\MSYS2")
+    )) {
+        if (-not [string]::IsNullOrWhiteSpace($candidateRoot)) {
+            $candidate = Join-Path $candidateRoot "usr\bin\bash.exe"
+            if (-not $paths.Contains($candidate)) {
+                $paths.Add($candidate)
+            }
+        }
+    }
+    return $paths.ToArray()
+}
 
-if (-not (Test-Path $bash)) {
+function Find-MsysBash([string]$PreferredRoot) {
+    foreach ($candidate in (Get-MsysBashCandidatePaths $PreferredRoot)) {
+        if (Test-Path $candidate) {
+            return $candidate
+        }
+    }
+    return ""
+}
+
+function Wait-ForMsysBash([string]$PreferredRoot, [int]$TimeoutSeconds) {
+    $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
+    do {
+        $found = Find-MsysBash $PreferredRoot
+        if (-not [string]::IsNullOrWhiteSpace($found)) {
+            return $found
+        }
+        Start-Sleep -Seconds 2
+    } while ((Get-Date) -lt $deadline)
+    return ""
+}
+
+function Get-MsysRootFromBash([string]$BashPath) {
+    $bin = Split-Path -Parent $BashPath
+    $usr = Split-Path -Parent $bin
+    return Split-Path -Parent $usr
+}
+
+$bash = Find-MsysBash $MsysRoot
+
+if ([string]::IsNullOrWhiteSpace($bash)) {
     if (-not (Get-Command winget -ErrorAction SilentlyContinue)) {
         throw "MSYS2 is not installed and winget is unavailable. Install MSYS2, then run this script again."
     }
 
     Write-Host "Installing MSYS2..."
     winget install --id MSYS2.MSYS2 -e --accept-source-agreements --accept-package-agreements
-    if ($LASTEXITCODE -ne 0 -or -not (Test-Path $bash)) {
-        throw "MSYS2 installation did not complete successfully."
+    $wingetExit = $LASTEXITCODE
+    $bash = Wait-ForMsysBash $MsysRoot 180
+    if ($wingetExit -ne 0 -and [string]::IsNullOrWhiteSpace($bash)) {
+        throw "MSYS2 installer failed with exit code $wingetExit."
+    }
+    if ([string]::IsNullOrWhiteSpace($bash)) {
+        $checked = (Get-MsysBashCandidatePaths $MsysRoot) -join ", "
+        throw "MSYS2 installation finished, but bash.exe was not found. Checked: $checked"
     }
 }
+
+$MsysRoot = Get-MsysRootFromBash $bash
+Write-Host "Using MSYS2 at $MsysRoot"
 
 Write-Host "Installing the local build packages..."
 $packageCommand = @'
