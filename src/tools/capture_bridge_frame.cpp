@@ -6,7 +6,8 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
-#include <string_view>
+#include <span>
+#include <string>
 #include <thread>
 #include <vector>
 
