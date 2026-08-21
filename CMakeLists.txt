@@ -27,6 +27,7 @@ add_library(a51xr_core
     src/reconstruction/relative_depth.cpp
     src/reconstruction/depth_anything_v2.cpp
     src/reconstruction/depth_inference.cpp
+    src/reconstruction/mesh_io.cpp
 )
 target_include_directories(a51xr_core PUBLIC src include)
 
@@ -57,10 +58,15 @@ endif()
 add_executable(area51xr src/main.cpp)
 target_link_libraries(area51xr PRIVATE a51xr_core)
 
+add_executable(area51xr-reconstruct src/tools/reconstruct_capture.cpp)
+target_link_libraries(area51xr-reconstruct PRIVATE a51xr_core)
+
 if(A51XR_ORT_DLL AND EXISTS "${A51XR_ORT_DLL}")
-    add_custom_command(TARGET area51xr POST_BUILD
-        COMMAND ${CMAKE_COMMAND} -E copy_if_different
-            "${A51XR_ORT_DLL}" "$<TARGET_FILE_DIR:area51xr>/onnxruntime.dll")
+    foreach(target_name IN ITEMS area51xr area51xr-reconstruct)
+        add_custom_command(TARGET ${target_name} POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                "${A51XR_ORT_DLL}" "$<TARGET_FILE_DIR:${target_name}>/onnxruntime.dll")
+    endforeach()
 endif()
 
 include(CTest)
@@ -132,4 +138,8 @@ if(BUILD_TESTING)
     add_executable(area51xr_depth_inference_tests tests/depth_inference_tests.cpp)
     target_link_libraries(area51xr_depth_inference_tests PRIVATE a51xr_core)
     add_test(NAME depth_inference COMMAND area51xr_depth_inference_tests)
+
+    add_executable(area51xr_mesh_io_tests tests/mesh_io_tests.cpp)
+    target_link_libraries(area51xr_mesh_io_tests PRIVATE a51xr_core)
+    add_test(NAME mesh_io COMMAND area51xr_mesh_io_tests)
 endif()
