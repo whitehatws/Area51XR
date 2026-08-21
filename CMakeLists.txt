@@ -85,17 +85,24 @@ endif()
 
 include(CTest)
 if(BUILD_TESTING)
+    # RelWithDebInfo defines NDEBUG by default. Keep assertions active in test
+    # targets so assert-based regressions actually execute.
+    if(MSVC)
+        add_compile_options(/UNDEBUG)
+    else()
+        add_compile_options(-UNDEBUG)
+    endif()
+
+    # Core regressions intentionally include projection, MAME IPC, and depth
+    # mesh coverage in one executable. This reduces the number of freshly
+    # generated unsigned executables Windows reputation scanning must launch.
     add_executable(area51xr_tests tests/projection_tests.cpp)
     target_link_libraries(area51xr_tests PRIVATE a51xr_core)
-    add_test(NAME projection COMMAND area51xr_tests)
+    add_test(NAME core_regressions COMMAND area51xr_tests)
 
     add_executable(area51xr_mame_bridge_tests tests/mame_bridge_tests.cpp)
     target_link_libraries(area51xr_mame_bridge_tests PRIVATE a51xr_core)
     add_test(NAME mame_bridge COMMAND area51xr_mame_bridge_tests)
-
-    add_executable(area51xr_mame_ipc_tests tests/mame_ipc_tests.cpp)
-    target_link_libraries(area51xr_mame_ipc_tests PRIVATE a51xr_core)
-    add_test(NAME mame_ipc COMMAND area51xr_mame_ipc_tests)
 
     add_executable(area51xr_mame_adapter_tests tests/mame_adapter_tests.cpp)
     target_link_libraries(area51xr_mame_adapter_tests PRIVATE a51xr_core)
@@ -120,10 +127,6 @@ if(BUILD_TESTING)
     add_executable(area51xr_d3d11_mesh_renderer_tests tests/d3d11_mesh_renderer_tests.cpp)
     target_link_libraries(area51xr_d3d11_mesh_renderer_tests PRIVATE a51xr_core)
     add_test(NAME d3d11_mesh_renderer COMMAND area51xr_d3d11_mesh_renderer_tests)
-
-    add_executable(area51xr_depth_mesh_tests tests/depth_mesh_tests.cpp)
-    target_link_libraries(area51xr_depth_mesh_tests PRIVATE a51xr_core)
-    add_test(NAME depth_mesh COMMAND area51xr_depth_mesh_tests)
 
     add_executable(area51xr_reprojection_tests tests/reprojection_tests.cpp)
     target_link_libraries(area51xr_reprojection_tests PRIVATE a51xr_core)
