@@ -56,23 +56,33 @@ bool D3D11MeshRenderer::upload(const SpatialMeshView& mesh) noexcept {
     if (!impl_->initialized) {
         return impl_->fail("D3D11 mesh renderer is not initialized");
     }
-    if (mesh.vertex_count == 0 || mesh.triangle_count == 0 ||
-        mesh.vertices.empty() || mesh.indices.empty()) {
+    if (mesh.vertices.empty() || mesh.indices.empty()) {
         return impl_->fail("spatial mesh is empty");
     }
-    if (mesh.vertex_count > std::numeric_limits<std::uint32_t>::max() / sizeof(SpatialMeshVertex) ||
-        mesh.triangle_count > std::numeric_limits<std::uint32_t>::max() / 3u) {
+    if ((mesh.indices.size() % 3u) != 0u) {
+        return impl_->fail("spatial mesh index count is not divisible by three");
+    }
+    if (mesh.vertices.size() > std::numeric_limits<std::uint32_t>::max() ||
+        mesh.indices.size() > std::numeric_limits<std::uint32_t>::max()) {
         return impl_->fail("spatial mesh is too large");
     }
-    const std::uint64_t expected_index_count = static_cast<std::uint64_t>(mesh.triangle_count) * 3u;
-    if (mesh.vertices.size() < mesh.vertex_count || mesh.indices.size() < expected_index_count) {
-        return impl_->fail("spatial mesh buffers are smaller than declared counts");
-    }
+
+    const std::uint32_t vertex_count = static_cast<std::uint32_t>(mesh.vertices.size());
+    const std::uint32_t index_count = static_cast<std::uint32_t>(mesh.indices.size());
+    const std::uint32_t triangle_count = index_count / 3u;
 
 #ifdef _WIN32
-    const UINT vertex_bytes = static_cast<UINT>(mesh.vertex_count * sizeof(SpatialMeshVertex));
+    const std::uint64_t vertex_bytes64 =
+        static_cast<std::uint64_t>(mesh.vertices.size()) * sizeof(SpatialMeshVertexView);
+    const std::uint64_t index_bytes64 =
+        static_cast<std::uint64_t>(mesh.indices.size()) * sizeof(std::uint32_t);
+    if (vertex_bytes64 > std::numeric_limits<UINT>::max() ||
+        index_bytes64 > std::numeric_limits<UINT>::max()) {
+        return impl_->fail("spatial mesh GPU buffers are too large");
+    }
+
     D3D11_BUFFER_DESC vb_desc{};
-    vb_desc.ByteWidth = vertex_bytes;
+    vb_desc.ByteWidth = static_cast<UINT>(vertex_bytes64);
     vb_desc.Usage = D3D11_USAGE_DEFAULT;
     vb_desc.BindFlags = D3D11_BIND_VERTEX_BUFFER;
     D3D11_SUBRESOURCE_DATA vb_data{};
@@ -83,10 +93,8 @@ bool D3D11MeshRenderer::upload(const SpatialMeshView& mesh) noexcept {
         return impl_->fail("failed to create D3D11 mesh vertex buffer");
     }
 
-    const UINT index_count = static_cast<UINT>(expected_index_count);
-    const UINT index_bytes = index_count * sizeof(std::uint32_t);
     D3D11_BUFFER_DESC ib_desc{};
-    ib_desc.ByteWidth = index_bytes;
+    ib_desc.ByteWidth = static_cast<UINT>(index_bytes64);
     ib_desc.Usage = D3D11_USAGE_DEFAULT;
     ib_desc.BindFlags = D3D11_BIND_INDEX_BUFFER;
     D3D11_SUBRESOURCE_DATA ib_data{};
@@ -105,8 +113,8 @@ bool D3D11MeshRenderer::upload(const SpatialMeshView& mesh) noexcept {
 #endif
 
     impl_->frame_number = mesh.frame_number;
-    impl_->vertex_count = mesh.vertex_count;
-    impl_->triangle_count = mesh.triangle_count;
+    impl_->vertex_count = vertex_count;
+    impl_->triangle_count = triangle_count;
     impl_->error.clear();
     return true;
 }
