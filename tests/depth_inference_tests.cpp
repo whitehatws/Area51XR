@@ -2,9 +2,12 @@
 
 #include <array>
 #include <cassert>
+#include <cmath>
 #include <cstdint>
 
 namespace {
+
+bool near(float a, float b, float eps = 1.0e-4f) { return std::abs(a - b) < eps; }
 
 class FakeBackend final : public area51xr::TensorInferenceBackend {
 public:
@@ -18,10 +21,11 @@ public:
         saw_input = !input.empty() && input_width == 14 && input_height == 14;
         output_width = 2;
         output_height = 2;
-        output = {1.0f, 2.0f, 3.0f, 4.0f};
+        output = next_output;
         return true;
     }
 
+    std::vector<float> next_output{1.0f, 2.0f, 3.0f, 4.0f};
     bool saw_input{};
 };
 
@@ -59,8 +63,12 @@ int main() {
     calibration.far_percentile = 0.0f;
     calibration.near_percentile = 1.0f;
 
+    area51xr::RelativeDepthAnchorOptions anchor_options{};
+    anchor_options.smoothing_alpha = 0.5f;
+    anchor_options.reset_span_multiple = 10.0f;
+
     FakeBackend backend;
-    area51xr::DepthAnythingV2Provider provider(backend, 14, calibration);
+    area51xr::DepthAnythingV2Provider provider(backend, 14, calibration, anchor_options);
     area51xr::DepthEstimate depth{};
     assert(provider.estimate(frame, depth));
     assert(backend.saw_input);
@@ -69,6 +77,19 @@ int main() {
     assert(depth.depth_m.size() == 4);
     assert(depth.depth_m.front() > depth.depth_m.back());
     assert(provider.last_stats().valid_samples == 4);
+    assert(near(provider.anchors().far_disparity, 1.0f));
+    assert(near(provider.anchors().near_disparity, 4.0f));
+
+    backend.next_output = {2.0f, 3.0f, 4.0f, 5.0f};
+    assert(provider.estimate(frame, depth));
+    assert(near(provider.anchors().far_disparity, 1.5f));
+    assert(near(provider.anchors().near_disparity, 4.5f));
+
+    provider.reset_anchors();
+    assert(!provider.anchors().valid_samples);
+    assert(provider.estimate(frame, depth));
+    assert(near(provider.anchors().far_disparity, 2.0f));
+    assert(near(provider.anchors().near_disparity, 5.0f));
 
     FailingBackend failing;
     area51xr::DepthAnythingV2Provider failing_provider(failing, 14, calibration);
