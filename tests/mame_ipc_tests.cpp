@@ -3,9 +3,12 @@
 #include <array>
 #include <cassert>
 #include <cstdint>
+#include <memory>
 
 int main() {
-    area51xr::MameSharedState shared{};
+    // MameSharedState contains the full shared framebuffer and is larger than
+    // the default Windows process stack. Keep the test fixture on the heap.
+    auto shared = std::make_unique<area51xr::MameSharedState>();
 
     area51xr::MameFrameHeader header{};
     header.frame_number = 42;
@@ -17,13 +20,13 @@ int main() {
     const std::array<std::uint8_t, 8> pixels{1, 2, 3, 4, 5, 6, 7, 8};
     header.payload_bytes = pixels.size();
 
-    assert(area51xr::publish_frame(shared, header, pixels));
-    assert(shared.frame.frame_number == 42);
-    assert((shared.frame.sequence & 1u) == 0);
+    assert(area51xr::publish_frame(*shared, header, pixels));
+    assert(shared->frame.frame_number == 42);
+    assert((shared->frame.sequence & 1u) == 0);
 
     std::array<std::uint8_t, 8> copied{};
     area51xr::MameFrameHeader copied_header{};
-    assert(area51xr::copy_latest_frame(shared, copied_header, copied));
+    assert(area51xr::copy_latest_frame(*shared, copied_header, copied));
     assert(copied_header.frame_number == 42);
     assert(copied_header.width == 2);
     assert(copied_header.height == 1);
@@ -31,10 +34,10 @@ int main() {
 
     auto bad_header = header;
     bad_header.payload_bytes = pixels.size() + 1;
-    assert(!area51xr::publish_frame(shared, bad_header, pixels));
+    assert(!area51xr::publish_frame(*shared, bad_header, pixels));
 
     std::array<std::uint8_t, 4> too_small{};
-    assert(!area51xr::copy_latest_frame(shared, copied_header, too_small));
+    assert(!area51xr::copy_latest_frame(*shared, copied_header, too_small));
 
 #ifdef _WIN32
     area51xr::MameIpc owner;
