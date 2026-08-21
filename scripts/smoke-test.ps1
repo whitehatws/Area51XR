@@ -29,6 +29,16 @@ if ([string]::IsNullOrWhiteSpace($DepthModelPath)) {
     $DepthModelPath = Join-Path $root "models\depth_anything_v2_vits.onnx"
 }
 
+function ConvertTo-MsysPath([string]$Path) {
+    $full = [System.IO.Path]::GetFullPath($Path)
+    if ($full -match '^([A-Za-z]):\\(.*)$') {
+        $drive = $matches[1].ToLowerInvariant()
+        $tail = $matches[2] -replace '\\', '/'
+        return "/$drive/$tail"
+    }
+    return ($full -replace '\\', '/')
+}
+
 if (-not (Test-Path $bash)) {
     throw "MSYS2 bash not found at '$bash'."
 }
@@ -52,31 +62,27 @@ if ($Jobs -le 0) {
 Write-Host "[1/8] Applying Area51XR MAME integration..."
 & (Join-Path $PSScriptRoot "apply-mame-patch.ps1") -MameRoot $MameRoot
 
-$env:A51XR_ROOT = $root
-$env:A51XR_MAME_ROOT = $MameRoot
-$env:A51XR_OPENXR_SDK = $OpenXrSdk
-$env:A51XR_ONNXRUNTIME_DIR = $OnnxRuntimeDir
+$env:A51XR_ROOT_MSYS = ConvertTo-MsysPath $root
+$env:A51XR_MAME_ROOT_MSYS = ConvertTo-MsysPath $MameRoot
+$env:A51XR_OPENXR_SDK_MSYS = ConvertTo-MsysPath $OpenXrSdk
+$env:A51XR_ONNXRUNTIME_DIR_MSYS = ConvertTo-MsysPath $OnnxRuntimeDir
 
 Write-Host "[2/8] Building Area51XR with MSYS2/UCRT, OpenXR, and ONNX Runtime..."
-$hostBuildCommand = @"
-export PATH=/ucrt64/bin:/usr/bin:`$PATH
-root="`$(cygpath -u "`$A51XR_ROOT")"
-sdk="`$(cygpath -u "`$A51XR_OPENXR_SDK")"
-ort="`$(cygpath -u "`$A51XR_ONNXRUNTIME_DIR")"
-cmake -S "`$root" -B "`$root/build-mingw" -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo -DA51XR_OPENXR_SDK="`$sdk" -DA51XR_ONNXRUNTIME_DIR="`$ort"
-cmake --build "`$root/build-mingw" -j$Jobs
-"@
+$hostBuildCommand = @'
+export PATH=/ucrt64/bin:/usr/bin:$PATH
+cmake -S "$A51XR_ROOT_MSYS" -B "$A51XR_ROOT_MSYS/build-mingw" -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo -DA51XR_OPENXR_SDK="$A51XR_OPENXR_SDK_MSYS" -DA51XR_ONNXRUNTIME_DIR="$A51XR_ONNXRUNTIME_DIR_MSYS"
+cmake --build "$A51XR_ROOT_MSYS/build-mingw" --parallel
+'@
 & $bash -lc $hostBuildCommand
 if ($LASTEXITCODE -ne 0) {
     throw "Area51XR build failed with exit code $LASTEXITCODE."
 }
 
 Write-Host "[3/8] Running Area51XR regression tests..."
-$hostTestCommand = @"
-export PATH=/ucrt64/bin:/usr/bin:`$PATH
-root="`$(cygpath -u "`$A51XR_ROOT")"
-ctest --test-dir "`$root/build-mingw" --output-on-failure
-"@
+$hostTestCommand = @'
+export PATH=/ucrt64/bin:/usr/bin:$PATH
+ctest --test-dir "$A51XR_ROOT_MSYS/build-mingw" --output-on-failure
+'@
 & $bash -lc $hostTestCommand
 if ($LASTEXITCODE -ne 0) {
     throw "Area51XR tests failed with exit code $LASTEXITCODE."
@@ -84,6 +90,9 @@ if ($LASTEXITCODE -ne 0) {
 
 Write-Host "[4/8] Running synthetic reconstruction self-test..."
 & (Join-Path $PSScriptRoot "reconstruction-selftest.ps1")
+if ($LASTEXITCODE -ne 0) {
+    throw "Synthetic reconstruction self-test failed with exit code $LASTEXITCODE."
+}
 
 Write-Host "[5/8] Running Depth Anything V2 ONNX self-test..."
 $depthSelfTest = Join-Path $root "build-mingw\area51xr-depth-selftest.exe"
@@ -96,13 +105,11 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 Write-Host "[6/8] Building Khronos OpenXR loader DLL..."
-$loaderBuildCommand = @"
-export PATH=/ucrt64/bin:/usr/bin:`$PATH
-root="`$(cygpath -u "`$A51XR_ROOT")"
-sdk="`$(cygpath -u "`$A51XR_OPENXR_SDK")"
-cmake -S "`$sdk" -B "`$root/external/openxr-build" -G Ninja -DCMAKE_BUILD_TYPE=Release -DDYNAMIC_LOADER=ON -DBUILD_TESTING=OFF
-cmake --build "`$root/external/openxr-build" --target openxr_loader -j$Jobs
-"@
+$loaderBuildCommand = @'
+export PATH=/ucrt64/bin:/usr/bin:$PATH
+cmake -S "$A51XR_OPENXR_SDK_MSYS" -B "$A51XR_ROOT_MSYS/external/openxr-build" -G Ninja -DCMAKE_BUILD_TYPE=Release -DDYNAMIC_LOADER=ON -DBUILD_TESTING=OFF
+cmake --build "$A51XR_ROOT_MSYS/external/openxr-build" --target openxr_loader --parallel
+'@
 & $bash -lc $loaderBuildCommand
 if ($LASTEXITCODE -ne 0) {
     throw "OpenXR loader build failed with exit code $LASTEXITCODE."
@@ -116,11 +123,12 @@ if (-not $loaderDll) {
 Copy-Item $loaderDll (Join-Path $root "build-mingw\openxr_loader.dll") -Force
 
 Write-Host "[7/8] Building targeted MAME CoJag subtarget..."
-$mameBuildCommand = @"
-export PATH=/ucrt64/bin:/usr/bin:`$PATH
-cd "`$(cygpath -u "`$A51XR_MAME_ROOT")"
-make SUBTARGET=area51xr SOURCES=src/mame/atari/jaguar.cpp REGENIE=1 -j$Jobs
-"@
+$env:A51XR_MAME_JOBS = [string]$Jobs
+$mameBuildCommand = @'
+export PATH=/ucrt64/bin:/usr/bin:$PATH
+cd "$A51XR_MAME_ROOT_MSYS"
+make SUBTARGET=area51xr SOURCES=src/mame/atari/jaguar.cpp REGENIE=1 -j"$A51XR_MAME_JOBS"
+'@
 & $bash -lc $mameBuildCommand
 if ($LASTEXITCODE -ne 0) {
     throw "MAME build failed with exit code $LASTEXITCODE."
