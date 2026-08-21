@@ -62,16 +62,26 @@ int main(int argc, char** argv) {
     }
 
     const std::filesystem::path output = argv[1];
-    std::filesystem::create_directories(output.parent_path().empty() ? "." : output.parent_path());
+    const auto parent = output.parent_path();
+    if (!parent.empty()) {
+        std::error_code ec;
+        std::filesystem::create_directories(parent, ec);
+        if (ec) {
+            std::cerr << "failed to create output directory: " << parent.string()
+                      << " error=" << ec.message() << '\n';
+            return 3;
+        }
+    }
+
     std::ofstream out(output, std::ios::binary);
     if (!out) {
         std::cerr << "failed to open output capture: " << output.string() << '\n';
-        return 3;
+        return 4;
     }
     out.write(reinterpret_cast<const char*>(encoded.data()), static_cast<std::streamsize>(encoded.size()));
     if (!out) {
         std::cerr << "failed to write output capture: " << output.string() << '\n';
-        return 4;
+        return 5;
     }
 
     std::cout << "capture=" << output.string()
