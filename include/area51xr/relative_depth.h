@@ -20,6 +20,38 @@ struct RelativeDepthStats {
     std::size_t valid_samples{};
 };
 
+struct RelativeDepthAnchorOptions {
+    float smoothing_alpha{0.08f};
+    float reset_span_multiple{1.0f};
+};
+
+class RelativeDepthAnchorTracker {
+public:
+    explicit RelativeDepthAnchorTracker(RelativeDepthAnchorOptions options = {});
+
+    RelativeDepthStats update(const RelativeDepthStats& candidate) noexcept;
+    void reset() noexcept;
+
+    [[nodiscard]] bool initialized() const noexcept;
+    [[nodiscard]] const RelativeDepthStats& anchors() const noexcept;
+
+private:
+    RelativeDepthAnchorOptions options_{};
+    RelativeDepthStats anchors_{};
+    bool initialized_{};
+};
+
+bool analyze_relative_disparity(
+    std::span<const float> disparity,
+    RelativeDepthStats& stats,
+    const RelativeDepthCalibration& calibration = {});
+
+bool map_relative_disparity_to_metric_depth(
+    std::span<const float> disparity,
+    std::vector<float>& depth_m,
+    const RelativeDepthStats& anchors,
+    const RelativeDepthCalibration& calibration = {});
+
 bool relative_disparity_to_metric_depth(
     std::span<const float> disparity,
     std::vector<float>& depth_m,
