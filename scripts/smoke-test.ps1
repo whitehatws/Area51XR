@@ -39,6 +39,22 @@ function ConvertTo-MsysPath([string]$Path) {
     return ($full -replace '\\', '/')
 }
 
+function Collect-BlockDiagnostics {
+    $diagDir = $env:A51XR_ACCEPTANCE_DIR
+    if ([string]::IsNullOrWhiteSpace($diagDir)) {
+        $diagDir = Join-Path $root "logs"
+    }
+    $diagPath = Join-Path $diagDir "windows-block-diagnostics.txt"
+    try {
+        & (Join-Path $PSScriptRoot "collect-windows-block-diagnostics.ps1") `
+            -BuildDir (Join-Path $root "build-mingw") `
+            -OutputPath $diagPath
+    }
+    catch {
+        Write-Host "Warning: failed to collect Windows block diagnostics: $_"
+    }
+}
+
 if (-not (Test-Path $bash)) {
     throw "MSYS2 bash not found at '$bash'."
 }
@@ -79,26 +95,22 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 Write-Host "[3/8] Running Area51XR regression tests..."
-$hostTestCommand = @'
-export PATH=/ucrt64/bin:/usr/bin:$PATH
-ctest --test-dir "$A51XR_ROOT_MSYS/build-mingw" --output-on-failure --repeat until-pass:2
-'@
-& $bash -lc $hostTestCommand
-if ($LASTEXITCODE -ne 0) {
-    $diagDir = $env:A51XR_ACCEPTANCE_DIR
-    if ([string]::IsNullOrWhiteSpace($diagDir)) {
-        $diagDir = Join-Path $root "logs"
-    }
-    $diagPath = Join-Path $diagDir "windows-block-diagnostics.txt"
-    try {
-        & (Join-Path $PSScriptRoot "collect-windows-block-diagnostics.ps1") `
-            -BuildDir (Join-Path $root "build-mingw") `
-            -OutputPath $diagPath
-    }
-    catch {
-        Write-Host "Warning: failed to collect Windows block diagnostics: $_"
-    }
-    throw "Area51XR tests failed with exit code $LASTEXITCODE."
+$regressionExe = Join-Path $root "build-mingw\area51xr_tests.exe"
+if (-not (Test-Path $regressionExe)) {
+    throw "Area51XR regression executable was not built: $regressionExe"
+}
+$testExit = 1
+try {
+    & $regressionExe
+    $testExit = $LASTEXITCODE
+}
+catch {
+    Write-Host "Regression executable could not be launched: $_"
+    $testExit = 1
+}
+if ($testExit -ne 0) {
+    Collect-BlockDiagnostics
+    throw "Area51XR tests failed with exit code $testExit."
 }
 
 Write-Host "[4/8] Running synthetic reconstruction self-test..."
