@@ -92,15 +92,18 @@ $ortHeader = Join-Path $OnnxRuntimeDir "build\native\include\onnxruntime_cxx_api
 $ortLib = Join-Path $OnnxRuntimeDir "runtimes\win-x64\native\onnxruntime.lib"
 if (-not (Test-Path $ortHeader) -or -not (Test-Path $ortLib)) {
     $ortPackage = Join-Path $root "external\Microsoft.ML.OnnxRuntime.1.28.0.nupkg"
+    $ortZip = Join-Path $root "external\Microsoft.ML.OnnxRuntime.1.28.0.zip"
     Download-File -Url "https://www.nuget.org/api/v2/package/Microsoft.ML.OnnxRuntime/1.28.0" `
         -Target $ortPackage -Label "ONNX Runtime 1.28.0"
 
     Write-Host "Extracting ONNX Runtime..."
+    Copy-Item $ortPackage $ortZip -Force
     if (Test-Path $OnnxRuntimeDir) {
         Remove-Item -Recurse -Force $OnnxRuntimeDir
     }
     New-Item -ItemType Directory -Force -Path $OnnxRuntimeDir | Out-Null
-    Expand-Archive -Path $ortPackage -DestinationPath $OnnxRuntimeDir -Force
+    Expand-Archive -Path $ortZip -DestinationPath $OnnxRuntimeDir -Force
+    Remove-Item $ortZip -Force -ErrorAction SilentlyContinue
 }
 if (-not (Test-Path $ortHeader) -or -not (Test-Path $ortLib)) {
     throw "ONNX Runtime package did not contain the expected Windows x64 C++ files."
