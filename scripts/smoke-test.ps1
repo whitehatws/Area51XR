@@ -158,7 +158,16 @@ Copy-Item $packagedLoader $loaderDll -Force
 Write-Host "[7/8] Building targeted MAME CoJag subtarget with $Jobs jobs..."
 $env:A51XR_MAME_JOBS = [string]$Jobs
 $mameBuildCommand = @'
+# MAME detects its Windows/x64 generator from the MSYS2 shell environment.
+# Calling usr/bin/bash.exe directly does not populate these variables, so set
+# the same values an MSYS2 UCRT64 terminal provides before invoking make.
+export OS=Windows_NT
+export MSYSTEM=UCRT64
+export MINGW_PREFIX=/ucrt64
+export MINGW_CHOST=x86_64-w64-mingw32
+export MINGW_PACKAGE_PREFIX=mingw-w64-ucrt-x86_64
 export PATH=/ucrt64/bin:/usr/bin:$PATH
+printf 'MAME toolchain: MSYSTEM=%s MINGW_PREFIX=%s\n' "$MSYSTEM" "$MINGW_PREFIX"
 cd "$A51XR_MAME_ROOT_MSYS"
 make SUBTARGET=area51xr SOURCES=src/mame/atari/jaguar.cpp REGENIE=1 -j"$A51XR_MAME_JOBS"
 '@
