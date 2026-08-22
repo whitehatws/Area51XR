@@ -19,7 +19,7 @@ if ([string]::IsNullOrWhiteSpace($MameRoot)) {
     $MameRoot = Join-Path $root "external\mame"
 }
 if ([string]::IsNullOrWhiteSpace($OpenXrSdk)) {
-    $OpenXrSdk = Join-Path $root "external\openxr-sdk"
+    $OpenXrSdk = Join-Path $MsysRoot "ucrt64"
 }
 if ([string]::IsNullOrWhiteSpace($OnnxRuntimeDir)) {
     $OnnxRuntimeDir = Join-Path $root "external\onnxruntime-1.28.0"
@@ -165,12 +165,22 @@ Write-Host "Using MSYS2 at $MsysRoot"
 Write-Host "Installing the local build packages..."
 $packageCommand = @'
 export PATH=/ucrt64/bin:/usr/bin:$PATH
-pacman -S --needed --noconfirm git make mingw-w64-ucrt-x86_64-gcc mingw-w64-ucrt-x86_64-python mingw-w64-ucrt-x86_64-cmake mingw-w64-ucrt-x86_64-ninja mingw-w64-ucrt-x86_64-lld
+pacman -S --needed --noconfirm git make mingw-w64-ucrt-x86_64-gcc mingw-w64-ucrt-x86_64-python mingw-w64-ucrt-x86_64-cmake mingw-w64-ucrt-x86_64-ninja mingw-w64-ucrt-x86_64-lld mingw-w64-ucrt-x86_64-openxr-sdk
 '@
 & $bash -lc $packageCommand
 if ($LASTEXITCODE -ne 0) {
     throw "MSYS2 package installation failed with exit code $LASTEXITCODE."
 }
+
+$openXrHeader = Join-Path $OpenXrSdk "include\openxr\openxr.h"
+$openXrLoader = Join-Path $MsysRoot "ucrt64\bin\libopenxr_loader.dll"
+if (-not (Test-Path $openXrHeader)) {
+    throw "MSYS2 OpenXR headers were not found at '$openXrHeader'."
+}
+if (-not (Test-Path $openXrLoader)) {
+    throw "MSYS2 OpenXR loader was not found at '$openXrLoader'."
+}
+Write-Host "Using packaged OpenXR SDK/loader from $OpenXrSdk"
 
 $windowsGit = Find-WindowsGit
 if ([string]::IsNullOrWhiteSpace($windowsGit)) {
@@ -218,11 +228,15 @@ function Download-File([string]$Url, [string]$Target, [string]$Label) {
 }
 
 Clone-IfMissing -Target $MameRoot -Url "https://github.com/mamedev/mame.git" -Label "MAME"
-Clone-IfMissing -Target $OpenXrSdk -Url "https://github.com/KhronosGroup/OpenXR-SDK.git" -Label "OpenXR SDK"
+
+$mameCommit = (& $windowsGit -C $MameRoot rev-parse HEAD 2>$null).Trim()
+if ($mameCommit) {
+    Write-Host "MAME commit: $mameCommit"
+}
 
 $ortHeader = Join-Path $OnnxRuntimeDir "build\native\include\onnxruntime_cxx_api.h"
-$ortLib = Join-Path $OnnxRuntimeDir "runtimes\win-x64\native\onnxruntime.lib"
-if (-not (Test-Path $ortHeader) -or -not (Test-Path $ortLib)) {
+$ortDll = Join-Path $OnnxRuntimeDir "runtimes\win-x64\native\onnxruntime.dll"
+if (-not (Test-Path $ortHeader) -or -not (Test-Path $ortDll)) {
     $ortPackage = Join-Path $root "external\Microsoft.ML.OnnxRuntime.1.28.0.nupkg"
     $ortZip = Join-Path $root "external\Microsoft.ML.OnnxRuntime.1.28.0.zip"
     Download-File -Url "https://www.nuget.org/api/v2/package/Microsoft.ML.OnnxRuntime/1.28.0" `
@@ -237,8 +251,8 @@ if (-not (Test-Path $ortHeader) -or -not (Test-Path $ortLib)) {
     Expand-Archive -Path $ortZip -DestinationPath $OnnxRuntimeDir -Force
     Remove-Item $ortZip -Force -ErrorAction SilentlyContinue
 }
-if (-not (Test-Path $ortHeader) -or -not (Test-Path $ortLib)) {
-    throw "ONNX Runtime package did not contain the expected Windows x64 C++ files."
+if (-not (Test-Path $ortHeader) -or -not (Test-Path $ortDll)) {
+    throw "ONNX Runtime package did not contain the expected Windows x64 headers/DLL."
 }
 
 $depthModelUrl = "https://huggingface.co/AXERA-TECH/Depth-Anything-V2/resolve/main/depth_anything_v2_vits.onnx?download=true"
