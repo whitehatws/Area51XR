@@ -9,7 +9,9 @@ param(
 
     [string]$DepthModelPath = "",
 
-    [string]$RomPath = ""
+    [string]$RomPath = "",
+
+    [switch]$AllowModifiedMedia
 )
 
 $ErrorActionPreference = "Stop"
@@ -89,6 +91,9 @@ Write-Host "MAME root: $MameRoot"
 Write-Host "OpenXR SDK root: $OpenXrSdk"
 Write-Host "ONNX Runtime root: $OnnxRuntimeDir"
 Write-Host "Depth model: $DepthModelPath"
+if ($AllowModifiedMedia) {
+    Write-Host "Modified Area 51 media mode: enabled"
+}
 
 function Get-MsysBashCandidatePaths([string]$PreferredRoot) {
     $paths = New-Object System.Collections.Generic.List[string]
@@ -205,6 +210,10 @@ function Clone-IfMissing([string]$Target, [string]$Url, [string]$Label) {
         }
     }
 
+    if (-not (Test-Path (Split-Path -Parent $Target))) {
+        New-Item -ItemType Directory -Force -Path (Split-Path -Parent $Target) | Out-Null
+    }
+
     Write-Host "Cloning $Label source..."
     Write-Host "Clone target: $Target"
     & $windowsGit clone --depth 1 -- $Url $Target
@@ -264,13 +273,18 @@ if ($modelHash -ne $depthModelSha256) {
 }
 
 Write-Host "Building and validating Area51XR + targeted MAME..."
-& (Join-Path $PSScriptRoot "smoke-test.ps1") `
-    -MameRoot $MameRoot `
-    -MsysRoot $MsysRoot `
-    -OpenXrSdk $OpenXrSdk `
-    -OnnxRuntimeDir $OnnxRuntimeDir `
-    -DepthModelPath $DepthModelPath `
-    -RomPath $RomPath
+$smokeArgs = @{
+    MameRoot = $MameRoot
+    MsysRoot = $MsysRoot
+    OpenXrSdk = $OpenXrSdk
+    OnnxRuntimeDir = $OnnxRuntimeDir
+    DepthModelPath = $DepthModelPath
+    RomPath = $RomPath
+}
+if ($AllowModifiedMedia) {
+    $smokeArgs.AllowModifiedMedia = $true
+}
+& (Join-Path $PSScriptRoot "smoke-test.ps1") @smokeArgs
 
 $effectiveRomPath = $RomPath
 if (-not [string]::IsNullOrWhiteSpace($env:A51XR_MAME_MEDIA_PATH)) {
