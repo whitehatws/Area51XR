@@ -105,6 +105,12 @@ try {
         throw "bootstrap-windows.ps1 failed with exit code $LASTEXITCODE"
     }
 
+    $effectiveRomPath = $RomPath
+    if (-not [string]::IsNullOrWhiteSpace($env:A51XR_MAME_MEDIA_PATH)) {
+        $effectiveRomPath = $env:A51XR_MAME_MEDIA_PATH
+        Write-Step "Resolved MAME media path: $effectiveRomPath"
+    }
+
     if (-not $SkipVr) {
         $mameExe = Get-ChildItem -Path $MameRoot -Filter "*area51xr*.exe" -File -ErrorAction SilentlyContinue |
             Select-Object -First 1 -ExpandProperty FullName
@@ -113,7 +119,7 @@ try {
         }
 
         Write-Step "Running VR acceptance harness."
-        & (Join-Path $PSScriptRoot "live-vr-test.ps1") -MameExe $mameExe -RomPath $RomPath -MsysRoot $MsysRoot
+        & (Join-Path $PSScriptRoot "live-vr-test.ps1") -MameExe $mameExe -RomPath $effectiveRomPath -MsysRoot $MsysRoot
         if ($LASTEXITCODE -ne 0) {
             throw "live-vr-test.ps1 failed with exit code $LASTEXITCODE"
         }
@@ -134,4 +140,5 @@ catch {
 finally {
     Stop-AcceptanceTranscript
     Remove-Item Env:A51XR_ACCEPTANCE_DIR -ErrorAction SilentlyContinue
+    Remove-Item Env:A51XR_MAME_MEDIA_PATH -ErrorAction SilentlyContinue
 }
