@@ -70,6 +70,7 @@ $mame = $null
 try {
     Write-Host "Starting Area51XR desktop bridge..."
     $host = Start-Process -FilePath $hostExe -ArgumentList @("--bridge", "0.5", "0.5") -PassThru `
+        -WorkingDirectory (Split-Path -Parent $hostExe) `
         -RedirectStandardOutput $hostOut -RedirectStandardError $hostErr
 
     Start-Sleep -Milliseconds 750
@@ -80,6 +81,7 @@ try {
     Write-Host "Starting Area 51 in patched MAME..."
     $mameArgs = @("area51", "-rompath", $RomPath, "-window", "-verbose")
     $mame = Start-Process -FilePath $MameExe -ArgumentList $mameArgs -PassThru `
+        -WorkingDirectory (Split-Path -Parent $MameExe) `
         -RedirectStandardOutput $mameOut -RedirectStandardError $mameErr
 
     Start-Sleep -Seconds $StartupSeconds
@@ -139,7 +141,7 @@ try {
     ) -join [Environment]::NewLine
     Set-Content -Path $resultPath -Value $result
     Write-Host $result
-    exit 0
+    return
 }
 finally {
     if ($mame -and -not $mame.HasExited) {
