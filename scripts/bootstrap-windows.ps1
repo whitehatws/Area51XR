@@ -272,6 +272,12 @@ Write-Host "Building and validating Area51XR + targeted MAME..."
     -DepthModelPath $DepthModelPath `
     -RomPath $RomPath
 
+$effectiveRomPath = $RomPath
+if (-not [string]::IsNullOrWhiteSpace($env:A51XR_MAME_MEDIA_PATH)) {
+    $effectiveRomPath = $env:A51XR_MAME_MEDIA_PATH
+    Write-Host "Using resolved MAME media path for live stages: $effectiveRomPath"
+}
+
 if (-not [string]::IsNullOrWhiteSpace($RomPath)) {
     $mameExe = Get-ChildItem -Path $MameRoot -Filter "*area51xr*.exe" -File -ErrorAction SilentlyContinue |
         Select-Object -First 1 -ExpandProperty FullName
@@ -282,18 +288,18 @@ if (-not [string]::IsNullOrWhiteSpace($RomPath)) {
     Write-Host "Running desktop capture and reconstruction test..."
     & (Join-Path $PSScriptRoot "capture-mame-reconstruction.ps1") `
         -MameExe $mameExe `
-        -RomPath $RomPath `
+        -RomPath $effectiveRomPath `
         -DepthModelPath $DepthModelPath
 
     Write-Host "Running desktop reconstruction sequence capture..."
     & (Join-Path $PSScriptRoot "capture-mame-sequence.ps1") `
         -MameExe $mameExe `
-        -RomPath $RomPath `
+        -RomPath $effectiveRomPath `
         -DepthModelPath $DepthModelPath `
         -FrameCount 4
 
     Write-Host "Running live Area 51 bridge test..."
-    & (Join-Path $PSScriptRoot "live-mame-test.ps1") -MameExe $mameExe -RomPath $RomPath
+    & (Join-Path $PSScriptRoot "live-mame-test.ps1") -MameExe $mameExe -RomPath $effectiveRomPath
 }
 else {
     Write-Host ""
