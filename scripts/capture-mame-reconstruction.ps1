@@ -67,16 +67,16 @@ if (-not [string]::IsNullOrWhiteSpace($DepthModelPath)) {
     $depthLabel = $DepthModelPath
 }
 
-$host = $null
+$hostProcess = $null
 $mame = $null
 try {
     Write-Host "Starting Area51XR desktop bridge..."
-    $host = Start-Process -FilePath $hostExe -ArgumentList @("--bridge", "0.5", "0.5") -PassThru `
+    $hostProcess = Start-Process -FilePath $hostExe -ArgumentList @("--bridge", "0.5", "0.5") -PassThru `
         -WorkingDirectory (Split-Path -Parent $hostExe) `
         -RedirectStandardOutput $hostOut -RedirectStandardError $hostErr
 
     Start-Sleep -Milliseconds 750
-    if ($host.HasExited) {
+    if ($hostProcess.HasExited) {
         throw "Area51XR bridge exited during startup. See $hostErr"
     }
 
@@ -90,7 +90,7 @@ try {
     if ($mame.HasExited) {
         throw "MAME exited before capture. See $mameErr"
     }
-    if ($host.HasExited) {
+    if ($hostProcess.HasExited) {
         throw "Area51XR bridge exited before capture. See $hostErr"
     }
 
@@ -126,7 +126,7 @@ finally {
     if ($mame -and -not $mame.HasExited) {
         Stop-Process -Id $mame.Id -Force -ErrorAction SilentlyContinue
     }
-    if ($host -and -not $host.HasExited) {
-        Stop-Process -Id $host.Id -Force -ErrorAction SilentlyContinue
+    if ($hostProcess -and -not $hostProcess.HasExited) {
+        Stop-Process -Id $hostProcess.Id -Force -ErrorAction SilentlyContinue
     }
 }
