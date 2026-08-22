@@ -10,6 +10,8 @@ $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent $PSScriptRoot
 $sourceMameRoot = Join-Path $root "external\mame"
 $bash = Join-Path $MsysRoot "usr\bin\bash.exe"
+$expectedArea51Sha1 = "3b303bc37e206a6d7339352c869f050d04186f11"
+$expectedArea51tSha1 = "d2865cc7b1bb08a4393a72013a90e18d8a8f9860"
 
 function ConvertTo-MsysPath([string]$Path) {
     $full = [System.IO.Path]::GetFullPath($Path)
@@ -145,11 +147,37 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 Write-Host "Inspecting generated CHD..."
-& $chdman info -i $OutputChd
-if ($LASTEXITCODE -ne 0) {
-    throw "chdman info failed with exit code $LASTEXITCODE."
+$infoLines = @(& $chdman info -i $OutputChd 2>&1)
+$infoExit = $LASTEXITCODE
+$infoLines | ForEach-Object { Write-Host $_ }
+if ($infoExit -ne 0) {
+    throw "chdman info failed with exit code $infoExit."
+}
+
+$chdSha1 = ""
+foreach ($line in $infoLines) {
+    if ([string]$line -match '^SHA1:\s*([0-9a-fA-F]{40})\s*$') {
+        $chdSha1 = $Matches[1].ToLowerInvariant()
+        break
+    }
+}
+if ([string]::IsNullOrWhiteSpace($chdSha1)) {
+    throw "Unable to read the generated CHD SHA1 from chdman info output."
 }
 
 Write-Host ""
+Write-Host "Generated CHD SHA1: $chdSha1"
+Write-Host "Expected area51 SHA1: $expectedArea51Sha1"
+Write-Host "Expected area51t SHA1: $expectedArea51tSha1"
+
+if ($chdSha1 -ne $expectedArea51Sha1) {
+    if ($chdSha1 -eq $expectedArea51tSha1) {
+        throw "The disk image matches the Area 51 Time Warner (area51t) hard disk, not the R3000 area51 set targeted by Area51XR."
+    }
+    throw "The converted disk does not match the Area 51 hard-disk image expected by current MAME. Conversion succeeded, but this source image is a different disk/image and will not pass the Area51XR MAME audit."
+}
+
+Write-Host ""
+Write-Host "AREA 51 CHD HASH: PASS"
 Write-Host "CHD created: $OutputChd"
 Write-Host "Next: run scripts\resolve-mame-media.ps1 and then the Windows acceptance harness."
