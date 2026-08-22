@@ -21,15 +21,87 @@ if (-not (Test-Path $MameRoot)) {
     throw "MAME root not found: $MameRoot"
 }
 
+function Get-ArchiveEntryNames([string]$ArchivePath) {
+    $entries = New-Object System.Collections.Generic.List[string]
+    $lower = $ArchivePath.ToLowerInvariant()
+
+    if ($lower.EndsWith('.zip')) {
+        try {
+            Add-Type -AssemblyName System.IO.Compression.FileSystem -ErrorAction SilentlyContinue
+            $zip = [System.IO.Compression.ZipFile]::OpenRead($ArchivePath)
+            try {
+                foreach ($entry in $zip.Entries) {
+                    if (-not [string]::IsNullOrWhiteSpace($entry.Name)) {
+                        $entries.Add($entry.FullName)
+                    }
+                }
+            }
+            finally {
+                $zip.Dispose()
+            }
+            return $entries.ToArray()
+        }
+        catch {
+            Write-Host "  Warning: could not inspect ZIP '$ArchivePath': $_"
+        }
+    }
+
+    $tar = Get-Command tar.exe -ErrorAction SilentlyContinue
+    if ($tar -and ($lower.EndsWith('.tar') -or $lower.EndsWith('.tgz') -or $lower.EndsWith('.tar.gz'))) {
+        try {
+            $listed = @(& $tar.Source -tf $ArchivePath 2>$null)
+            foreach ($entry in $listed) {
+                if (-not [string]::IsNullOrWhiteSpace([string]$entry)) {
+                    $entries.Add([string]$entry)
+                }
+            }
+        }
+        catch {
+            Write-Host "  Warning: could not inspect TAR '$ArchivePath': $_"
+        }
+    }
+
+    return $entries.ToArray()
+}
+
 function Show-AlternateArea51Sets([string]$SearchRoot) {
     $installRoot = Split-Path -Parent ([System.IO.Path]::GetFullPath($SearchRoot))
     Write-Host ""
-    Write-Host "Scanning $installRoot for alternate Area 51 board-ROM revisions..."
+    Write-Host "Scanning $installRoot for Area 51 board-ROM revisions (loose files and archives)..."
 
     $allFiles = @(Get-ChildItem -Path $installRoot -File -Recurse -ErrorAction SilentlyContinue)
-    $names = @{}
+    $locations = @{}
+
+    function Add-RomLocation([string]$Name, [string]$Location) {
+        if ([string]::IsNullOrWhiteSpace($Name)) { return }
+        $key = [System.IO.Path]::GetFileName($Name).ToLowerInvariant()
+        if (-not $locations.ContainsKey($key)) {
+            $locations[$key] = New-Object System.Collections.Generic.List[string]
+        }
+        if (-not $locations[$key].Contains($Location)) {
+            $locations[$key].Add($Location)
+        }
+    }
+
     foreach ($file in $allFiles) {
-        $names[$file.Name.ToLowerInvariant()] = $file.FullName
+        Add-RomLocation -Name $file.Name -Location $file.FullName
+    }
+
+    $archives = @($allFiles | Where-Object {
+        $n = $_.Name.ToLowerInvariant()
+        $n.EndsWith('.zip') -or $n.EndsWith('.tar') -or $n.EndsWith('.tgz') -or $n.EndsWith('.tar.gz')
+    })
+
+    if ($archives.Count -gt 0) {
+        Write-Host "Inspecting $($archives.Count) archive(s) for known Area 51 ROM filenames..."
+    }
+    foreach ($archive in $archives) {
+        foreach ($entry in @(Get-ArchiveEntryNames -ArchivePath $archive.FullName)) {
+            $leaf = [System.IO.Path]::GetFileName(([string]$entry -replace '/', '\'))
+            if (-not [string]::IsNullOrWhiteSpace($leaf)) {
+                Add-RomLocation -Name $leaf -Location "$($archive.FullName) :: $entry"
+            }
+        }
     }
 
     $sets = @(
@@ -50,14 +122,16 @@ function Show-AlternateArea51Sets([string]$SearchRoot) {
     foreach ($set in $sets) {
         $found = 0
         foreach ($required in $set.Files) {
-            if ($names.ContainsKey($required.ToLowerInvariant())) { $found++ }
+            if ($locations.ContainsKey($required.ToLowerInvariant())) { $found++ }
         }
         Write-Host "$($set.Name): $found/$($set.Files.Count) expected ROM files found"
         if ($found -gt 0) {
             foreach ($required in $set.Files) {
                 $key = $required.ToLowerInvariant()
-                if ($names.ContainsKey($key)) {
-                    Write-Host "  FOUND   $required -> $($names[$key])"
+                if ($locations.ContainsKey($key)) {
+                    foreach ($location in $locations[$key]) {
+                        Write-Host "  FOUND   $required -> $location"
+                    }
                 }
                 else {
                     Write-Host "  MISSING $required"
@@ -125,7 +199,7 @@ if ($missingLines.Count -gt 0) {
     Write-Host "AREA 51 MEDIA PREFLIGHT: MISSING REQUIRED FILES"
     $missingLines | ForEach-Object { Write-Host "  $_" }
     Show-AlternateArea51Sets -SearchRoot $RomPath
-    throw "MAME reports required Area 51 board ROMs as missing. The CHD alone is not sufficient; use the alternate-set scan above to see whether a different legal Area 51 ROM revision is already present."
+    throw "MAME reports required Area 51 board ROMs as missing. The CHD alone is not sufficient; the scan above also checks inside ZIP/TAR archives for a legal Area 51 ROM revision already present."
 }
 
 if ($AllowModifiedMedia) {
