@@ -17,10 +17,11 @@ $ErrorActionPreference = "Stop"
 
 $root = Split-Path -Parent $PSScriptRoot
 $bash = Join-Path $MsysRoot "usr\bin\bash.exe"
+$ucrtBin = Join-Path $MsysRoot "ucrt64\bin"
 $mameSource = Join-Path $MameRoot "src\mame\atari\jaguar.cpp"
 
 if ([string]::IsNullOrWhiteSpace($OpenXrSdk)) {
-    $OpenXrSdk = Join-Path $root "external\openxr-sdk"
+    $OpenXrSdk = Join-Path $MsysRoot "ucrt64"
 }
 if ([string]::IsNullOrWhiteSpace($OnnxRuntimeDir)) {
     $OnnxRuntimeDir = Join-Path $root "external\onnxruntime-1.28.0"
@@ -58,6 +59,9 @@ function Collect-BlockDiagnostics {
 if (-not (Test-Path $bash)) {
     throw "MSYS2 bash not found at '$bash'."
 }
+if (-not (Test-Path $ucrtBin)) {
+    throw "MSYS2 UCRT64 bin directory not found at '$ucrtBin'."
+}
 if (-not (Test-Path $mameSource)) {
     throw "MAME source tree not found at '$MameRoot'."
 }
@@ -67,8 +71,17 @@ if (-not (Test-Path (Join-Path $OpenXrSdk "include\openxr\openxr.h"))) {
 if (-not (Test-Path (Join-Path $OnnxRuntimeDir "build\native\include\onnxruntime_cxx_api.h"))) {
     throw "ONNX Runtime C++ headers not found at '$OnnxRuntimeDir'."
 }
+if (-not (Test-Path (Join-Path $OnnxRuntimeDir "runtimes\win-x64\native\onnxruntime.dll"))) {
+    throw "ONNX Runtime DLL not found at '$OnnxRuntimeDir'."
+}
 if (-not (Test-Path $DepthModelPath)) {
     throw "Depth Anything V2 Small model not found at '$DepthModelPath'."
+}
+
+# PowerShell-launched MinGW binaries need the UCRT64 runtime DLL directory on
+# PATH. Bash already supplies it for compile steps; this covers tests/tools/VR.
+if (-not (($env:PATH -split ';') -contains $ucrtBin)) {
+    $env:PATH = "$ucrtBin;$env:PATH"
 }
 
 if ($Jobs -le 0) {
@@ -129,23 +142,13 @@ if ($LASTEXITCODE -ne 0) {
     throw "Depth model self-test failed with exit code $LASTEXITCODE."
 }
 
-Write-Host "[6/8] Building Khronos OpenXR loader DLL..."
-$loaderBuildCommand = @'
-export PATH=/ucrt64/bin:/usr/bin:$PATH
-cmake -S "$A51XR_OPENXR_SDK_MSYS" -B "$A51XR_ROOT_MSYS/external/openxr-build" -G Ninja -DCMAKE_BUILD_TYPE=Release -DDYNAMIC_LOADER=ON -DBUILD_TESTING=OFF
-cmake --build "$A51XR_ROOT_MSYS/external/openxr-build" --target openxr_loader --parallel
-'@
-& $bash -lc $loaderBuildCommand
-if ($LASTEXITCODE -ne 0) {
-    throw "OpenXR loader build failed with exit code $LASTEXITCODE."
+Write-Host "[6/8] Staging packaged OpenXR loader DLL..."
+$packagedLoader = Join-Path $ucrtBin "libopenxr_loader.dll"
+if (-not (Test-Path $packagedLoader)) {
+    throw "MSYS2 OpenXR loader not found at '$packagedLoader'."
 }
-
-$loaderDll = Get-ChildItem -Path (Join-Path $root "external\openxr-build") -Filter "openxr_loader.dll" -File -Recurse -ErrorAction SilentlyContinue |
-    Select-Object -First 1 -ExpandProperty FullName
-if (-not $loaderDll) {
-    throw "OpenXR loader build completed but openxr_loader.dll was not found."
-}
-Copy-Item $loaderDll (Join-Path $root "build-mingw\openxr_loader.dll") -Force
+$loaderDll = Join-Path $root "build-mingw\openxr_loader.dll"
+Copy-Item $packagedLoader $loaderDll -Force
 
 Write-Host "[7/8] Building targeted MAME CoJag subtarget..."
 $env:A51XR_MAME_JOBS = [string]$Jobs
@@ -192,5 +195,5 @@ Write-Host "Smoke test passed."
 Write-Host "Area51XR host:  $hostExe"
 Write-Host "Patched MAME:  $mameExe"
 Write-Host "Depth model:   $DepthModelPath"
-Write-Host "OpenXR loader: $(Join-Path $root 'build-mingw\openxr_loader.dll')"
+Write-Host "OpenXR loader: $loaderDll"
 Write-Host "ONNX Runtime:  $ortDll"
