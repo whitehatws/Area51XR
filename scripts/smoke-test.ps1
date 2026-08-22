@@ -10,6 +10,8 @@ param(
 
     [string]$DepthModelPath = "",
 
+    [string]$RomPath = "",
+
     [int]$Jobs = 0
 )
 
@@ -77,6 +79,9 @@ if (-not (Test-Path (Join-Path $OnnxRuntimeDir "runtimes\win-x64\native\onnxrunt
 if (-not (Test-Path $DepthModelPath)) {
     throw "Depth Anything V2 Small model not found at '$DepthModelPath'."
 }
+if (-not [string]::IsNullOrWhiteSpace($RomPath) -and -not (Test-Path $RomPath)) {
+    throw "ROM path not found at '$RomPath'."
+}
 
 # PowerShell-launched MinGW binaries need the UCRT64 runtime DLL directory on
 # PATH. Bash already supplies it for compile steps; this covers tests/tools/VR.
@@ -85,7 +90,7 @@ if (-not (($env:PATH -split ';') -contains $ucrtBin)) {
 }
 
 if ($Jobs -le 0) {
-    $Jobs = [Math]::Max(2, [Environment]::ProcessorCount)
+    $Jobs = [Math]::Max(2, [Math]::Min(8, [Environment]::ProcessorCount))
 }
 
 Write-Host "[1/8] Applying Area51XR MAME integration..."
@@ -150,7 +155,7 @@ if (-not (Test-Path $packagedLoader)) {
 $loaderDll = Join-Path $root "build-mingw\openxr_loader.dll"
 Copy-Item $packagedLoader $loaderDll -Force
 
-Write-Host "[7/8] Building targeted MAME CoJag subtarget..."
+Write-Host "[7/8] Building targeted MAME CoJag subtarget with $Jobs jobs..."
 $env:A51XR_MAME_JOBS = [string]$Jobs
 $mameBuildCommand = @'
 export PATH=/ucrt64/bin:/usr/bin:$PATH
@@ -179,6 +184,14 @@ if (-not $mameExe) {
 & $mameExe -listfull area51 | Out-Null
 if ($LASTEXITCODE -ne 0) {
     throw "The patched MAME executable could not enumerate Area 51."
+}
+
+if (-not [string]::IsNullOrWhiteSpace($RomPath)) {
+    Write-Host "Verifying Area 51 ROM/CHD set with MAME..."
+    & $mameExe -rompath $RomPath -verifyroms area51
+    if ($LASTEXITCODE -ne 0) {
+        throw "MAME could not verify the Area 51 ROM/CHD set in '$RomPath'. See the verification output above."
+    }
 }
 
 $hostExe = Join-Path $root "build-mingw\area51xr.exe"
