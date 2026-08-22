@@ -69,8 +69,7 @@ if ($failed.Count -gt 0) {
         ($failed -join [Environment]::NewLine)
     ) -join [Environment]::NewLine
     Set-Content -Path $resultPath -Value $body
-    Write-Error $body
-    exit 2
+    throw $body
 }
 
 $body = @(
@@ -83,4 +82,4 @@ $body = @(
 ) -join [Environment]::NewLine
 Set-Content -Path $resultPath -Value $body
 Write-Host $body
-exit 0
+return
