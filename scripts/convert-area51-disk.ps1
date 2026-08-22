@@ -9,23 +9,42 @@ $ErrorActionPreference = "Stop"
 
 function Get-PeMachine([string]$Path) {
     try {
-        $stream = [System.IO.File]::Open($Path, 'Open', 'Read', 'ReadWrite')
+        $stream = [System.IO.File]::Open($Path, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, [System.IO.FileShare]::ReadWrite)
         try {
-            $reader = New-Object System.IO.BinaryReader($stream)
-            if ($reader.ReadUInt16() -ne 0x5A4D) { return $null } # MZ
-            $stream.Position = 0x3C
-            $peOffset = $reader.ReadInt32()
-            if ($peOffset -lt 0 -or $peOffset -gt ($stream.Length - 6)) { return $null }
-            $stream.Position = $peOffset
-            if ($reader.ReadUInt32() -ne 0x00004550) { return $null } # PE\0\0
-            return $reader.ReadUInt16()
+            $reader = [System.IO.BinaryReader]::new($stream)
+            try {
+                if ($stream.Length -lt 64) { return $null }
+                if ($reader.ReadUInt16() -ne 0x5A4D) { return $null } # MZ
+                $stream.Position = 0x3C
+                $peOffset = $reader.ReadInt32()
+                if ($peOffset -lt 0 -or $peOffset -gt ($stream.Length - 6)) { return $null }
+                $stream.Position = $peOffset
+                if ($reader.ReadUInt32() -ne 0x00004550) { return $null } # PE\0\0
+                return $reader.ReadUInt16()
+            }
+            finally {
+                $reader.Dispose()
+            }
         }
         finally {
             $stream.Dispose()
         }
     }
     catch {
+        Write-Host "PE inspection failed for '$Path': $($_.Exception.Message)"
         return $null
+    }
+}
+
+function Get-FilePrefixHex([string]$Path, [int]$Count = 8) {
+    try {
+        $bytes = [System.IO.File]::ReadAllBytes($Path)
+        $take = [Math]::Min($Count, $bytes.Length)
+        if ($take -le 0) { return "<empty>" }
+        return (($bytes[0..($take - 1)] | ForEach-Object { $_.ToString("X2") }) -join ' ')
+    }
+    catch {
+        return "<unreadable>"
     }
 }
 
@@ -47,12 +66,15 @@ foreach ($candidate in $candidates) {
         $valid += $candidate
     }
     else {
+        $prefix = Get-FilePrefixHex $candidate.FullName
         Write-Host "Skipping non-Windows/invalid candidate: $($candidate.FullName)"
+        Write-Host "  Size: $($candidate.Length) bytes"
+        Write-Host "  First bytes: $prefix"
     }
 }
 
 if ($valid.Count -eq 0) {
-    throw "No runnable Windows chdman.exe was found under '$MameRoot'. Extract the official MAME Windows x64 package into a folder under $MameRoot, then rerun this script."
+    throw "No runnable Windows chdman.exe was found under '$MameRoot'. A Windows executable should begin with bytes '4D 5A' (MZ). If the diagnostics above show something else, the extracted/downloaded file is not the Windows chdman binary."
 }
 
 $chdman = $valid[0].FullName
