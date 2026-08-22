@@ -269,7 +269,8 @@ Write-Host "Building and validating Area51XR + targeted MAME..."
     -MsysRoot $MsysRoot `
     -OpenXrSdk $OpenXrSdk `
     -OnnxRuntimeDir $OnnxRuntimeDir `
-    -DepthModelPath $DepthModelPath
+    -DepthModelPath $DepthModelPath `
+    -RomPath $RomPath
 
 if (-not [string]::IsNullOrWhiteSpace($RomPath)) {
     $mameExe = Get-ChildItem -Path $MameRoot -Filter "*area51xr*.exe" -File -ErrorAction SilentlyContinue |
