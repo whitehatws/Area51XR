@@ -58,6 +58,28 @@ function Collect-BlockDiagnostics {
     }
 }
 
+function Get-MameMediaPath([string]$PrimaryRomPath) {
+    if ([string]::IsNullOrWhiteSpace($PrimaryRomPath)) {
+        return ""
+    }
+
+    $primary = [System.IO.Path]::GetFullPath($PrimaryRomPath)
+    $paths = New-Object System.Collections.Generic.List[string]
+    $paths.Add($primary)
+
+    $mameHome = Split-Path -Parent $primary
+    foreach ($candidate in @(
+        (Join-Path $mameHome "chds"),
+        (Join-Path $mameHome "chd")
+    )) {
+        if ((Test-Path $candidate) -and -not $paths.Contains($candidate)) {
+            $paths.Add([System.IO.Path]::GetFullPath($candidate))
+        }
+    }
+
+    return ($paths.ToArray() -join ';')
+}
+
 if (-not (Test-Path $bash)) {
     throw "MSYS2 bash not found at '$bash'."
 }
@@ -83,8 +105,6 @@ if (-not [string]::IsNullOrWhiteSpace($RomPath) -and -not (Test-Path $RomPath)) 
     throw "ROM path not found at '$RomPath'."
 }
 
-# PowerShell-launched MinGW binaries need the UCRT64 runtime DLL directory on
-# PATH. Bash already supplies it for compile steps; this covers tests/tools/VR.
 if (-not (($env:PATH -split ';') -contains $ucrtBin)) {
     $env:PATH = "$ucrtBin;$env:PATH"
 }
@@ -158,9 +178,6 @@ Copy-Item $packagedLoader $loaderDll -Force
 Write-Host "[7/8] Building targeted MAME CoJag subtarget with $Jobs jobs..."
 $env:A51XR_MAME_JOBS = [string]$Jobs
 $mameBuildCommand = @'
-# MAME detects its Windows/x64 generator from the MSYS2 shell environment.
-# Calling usr/bin/bash.exe directly does not populate these variables, so set
-# the same values an MSYS2 UCRT64 terminal provides before invoking make.
 export OS=Windows_NT
 export MSYSTEM=UCRT64
 export MINGW_PREFIX=/ucrt64
@@ -196,11 +213,39 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 if (-not [string]::IsNullOrWhiteSpace($RomPath)) {
-    Write-Host "Verifying Area 51 ROM/CHD set with MAME..."
-    & $mameExe -rompath $RomPath -verifyroms area51
-    if ($LASTEXITCODE -ne 0) {
-        throw "MAME could not verify the Area 51 ROM/CHD set in '$RomPath'. See the verification output above."
+    $mameMediaPath = Get-MameMediaPath $RomPath
+    Write-Host "MAME media path: $mameMediaPath"
+
+    $romZip = Join-Path $RomPath "area51.zip"
+    Write-Host "Area 51 ROM zip: $romZip = $(Test-Path $romZip)"
+    foreach ($mediaRoot in ($mameMediaPath -split ';')) {
+        $chdCandidate = Join-Path $mediaRoot "area51\area51.chd"
+        Write-Host "Area 51 CHD candidate: $chdCandidate = $(Test-Path $chdCandidate)"
     }
+
+    $diagDir = $env:A51XR_ACCEPTANCE_DIR
+    if ([string]::IsNullOrWhiteSpace($diagDir)) {
+        $diagDir = Join-Path $root "logs"
+    }
+    New-Item -ItemType Directory -Force -Path $diagDir | Out-Null
+    $verifyOut = Join-Path $diagDir "mame-verify-area51.out.txt"
+    $verifyErr = Join-Path $diagDir "mame-verify-area51.err.txt"
+
+    Write-Host "Verifying Area 51 ROM/CHD set with MAME..."
+    $verify = Start-Process -FilePath $mameExe `
+        -ArgumentList @("-rompath", $mameMediaPath, "-verifyroms", "area51") `
+        -WorkingDirectory (Split-Path -Parent $mameExe) `
+        -PassThru -Wait -NoNewWindow `
+        -RedirectStandardOutput $verifyOut -RedirectStandardError $verifyErr
+
+    if (Test-Path $verifyOut) { Get-Content $verifyOut | Write-Host }
+    if (Test-Path $verifyErr) { Get-Content $verifyErr | Write-Host }
+
+    if ($verify.ExitCode -ne 0) {
+        throw "MAME could not verify Area 51 using media path '$mameMediaPath'. Full audit is saved in the acceptance diagnostics. The current MAME parent set requires area51.zip plus the Area 51 CHD (normally area51\area51.chd)."
+    }
+
+    $env:A51XR_MAME_MEDIA_PATH = $mameMediaPath
 }
 
 $hostExe = Join-Path $root "build-mingw\area51xr.exe"
