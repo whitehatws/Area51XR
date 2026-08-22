@@ -68,7 +68,11 @@ bool MameIpc::open() {
 
     mapping_ = mapping;
     state_ = static_cast<MameSharedState*>(view);
-    return state_->protocol_version == kMameBridgeProtocolVersion;
+    if (state_->protocol_version != kMameBridgeProtocolVersion) {
+        close();
+        return false;
+    }
+    return true;
 #else
     return false;
 #endif
