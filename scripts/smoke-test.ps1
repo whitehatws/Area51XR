@@ -12,6 +12,8 @@ param(
 
     [string]$RomPath = "",
 
+    [switch]$AllowModifiedMedia,
+
     [int]$Jobs = 0
 )
 
@@ -205,11 +207,23 @@ if (-not [string]::IsNullOrWhiteSpace($RomPath)) {
     }
     Write-Host "MAME media path: $mameMediaPath"
 
+    $romFound = $false
+    $chdFound = $false
     foreach ($mediaRoot in ($mameMediaPath -split ';')) {
         $romCandidate = Join-Path $mediaRoot "area51.zip"
         $chdCandidate = Join-Path $mediaRoot "area51\area51.chd"
-        Write-Host "Area 51 ROM candidate: $romCandidate = $(Test-Path $romCandidate)"
-        Write-Host "Area 51 CHD candidate: $chdCandidate = $(Test-Path $chdCandidate)"
+        $romHere = Test-Path $romCandidate
+        $chdHere = Test-Path $chdCandidate
+        if ($romHere) { $romFound = $true }
+        if ($chdHere) { $chdFound = $true }
+        Write-Host "Area 51 ROM candidate: $romCandidate = $romHere"
+        Write-Host "Area 51 CHD candidate: $chdCandidate = $chdHere"
+    }
+    if (-not $romFound) {
+        throw "Area 51 ROM archive area51.zip was not found in the resolved MAME media path '$mameMediaPath'."
+    }
+    if (-not $chdFound) {
+        throw "Area 51 CHD area51\area51.chd was not found in the resolved MAME media path '$mameMediaPath'."
     }
 
     $diagDir = $env:A51XR_ACCEPTANCE_DIR
@@ -234,11 +248,16 @@ if (-not [string]::IsNullOrWhiteSpace($RomPath)) {
         $audit = @()
         if (Test-Path $verifyOut) { $audit += Get-Content $verifyOut }
         if (Test-Path $verifyErr) { $audit += Get-Content $verifyErr }
-        $missingHint = ""
-        if ($audit -match "NOT FOUND|missing|incorrect|wrong length|wrong checksum") {
-            $missingHint = " MAME reported missing or mismatched media in the audit above."
+        if ($AllowModifiedMedia) {
+            Write-Warning "MAME's stock Area 51 audit reported a mismatch, but -AllowModifiedMedia is enabled. Required media files are present, so continuing with runtime validation."
         }
-        throw "MAME could not verify Area 51 using media path '$mameMediaPath'.$missingHint Full audit is saved in the acceptance diagnostics."
+        else {
+            $missingHint = ""
+            if ($audit -match "NOT FOUND|missing|incorrect|wrong length|wrong checksum") {
+                $missingHint = " MAME reported missing or mismatched media in the audit above."
+            }
+            throw "MAME could not verify Area 51 using media path '$mameMediaPath'.$missingHint Full audit is saved in the acceptance diagnostics. If this is an intentional project-modified dump, rerun acceptance with -AllowModifiedMedia."
+        }
     }
 
     $env:A51XR_MAME_MEDIA_PATH = $mameMediaPath
