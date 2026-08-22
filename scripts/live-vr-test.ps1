@@ -5,6 +5,8 @@ param(
     [Parameter(Mandatory = $true)]
     [string]$RomPath,
 
+    [string]$MsysRoot = "C:\msys64",
+
     [int]$DurationSeconds = 45
 )
 
@@ -13,6 +15,7 @@ $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent $PSScriptRoot
 $hostExe = Join-Path $root "build-mingw\area51xr.exe"
 $loader = Join-Path $root "build-mingw\openxr_loader.dll"
+$ucrtBin = Join-Path $MsysRoot "ucrt64\bin"
 
 if (-not (Test-Path $hostExe)) {
     throw "Area51XR host not found at '$hostExe'. Run bootstrap-windows.ps1 first."
@@ -26,8 +29,15 @@ if (-not (Test-Path $MameExe)) {
 if (-not (Test-Path $RomPath)) {
     throw "ROM path not found at '$RomPath'."
 }
+if (-not (Test-Path $ucrtBin)) {
+    throw "MSYS2 UCRT64 runtime directory not found at '$ucrtBin'."
+}
 if ($DurationSeconds -lt 15) {
     throw "DurationSeconds must be at least 15."
+}
+
+if (-not (($env:PATH -split ';') -contains $ucrtBin)) {
+    $env:PATH = "$ucrtBin;$env:PATH"
 }
 
 $stamp = Get-Date -Format "yyyyMMdd-HHmmss"
@@ -39,6 +49,24 @@ $hostErr = Join-Path $logDir "area51xr.err.log"
 $mameOut = Join-Path $logDir "mame.log"
 $mameErr = Join-Path $logDir "mame.err.log"
 $resultFile = Join-Path $logDir "result.txt"
+$runtimeFile = Join-Path $logDir "openxr-runtime.txt"
+
+$runtimeLines = New-Object System.Collections.Generic.List[string]
+$runtimeLines.Add("OpenXR runtime inspection: $(Get-Date -Format o)")
+foreach ($registryPath in @(
+    "HKLM:\SOFTWARE\Khronos\OpenXR\1",
+    "HKCU:\SOFTWARE\Khronos\OpenXR\1"
+)) {
+    try {
+        $runtime = (Get-ItemProperty -Path $registryPath -Name ActiveRuntime -ErrorAction Stop).ActiveRuntime
+        $runtimeLines.Add("$registryPath ActiveRuntime=$runtime")
+    }
+    catch {
+        $runtimeLines.Add("$registryPath ActiveRuntime=<not set>")
+    }
+}
+$runtimeLines | Set-Content -Path $runtimeFile -Encoding UTF8
+Write-Host ($runtimeLines -join [Environment]::NewLine)
 
 $host = $null
 $mame = $null
@@ -57,6 +85,7 @@ try {
     Write-Host "Starting Area 51 in patched MAME..."
     $mameArgs = @("area51", "-rompath", $RomPath, "-window", "-verbose")
     $mame = Start-Process -FilePath $MameExe -ArgumentList $mameArgs -PassThru `
+        -WorkingDirectory (Split-Path -Parent $MameExe) `
         -RedirectStandardOutput $mameOut -RedirectStandardError $mameErr
 
     $deadline = (Get-Date).AddSeconds($DurationSeconds)
