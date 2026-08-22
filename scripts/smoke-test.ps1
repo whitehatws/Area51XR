@@ -21,6 +21,7 @@ $root = Split-Path -Parent $PSScriptRoot
 $bash = Join-Path $MsysRoot "usr\bin\bash.exe"
 $ucrtBin = Join-Path $MsysRoot "ucrt64\bin"
 $mameSource = Join-Path $MameRoot "src\mame\atari\jaguar.cpp"
+$mediaResolver = Join-Path $PSScriptRoot "resolve-mame-media.ps1"
 
 if ([string]::IsNullOrWhiteSpace($OpenXrSdk)) {
     $OpenXrSdk = Join-Path $MsysRoot "ucrt64"
@@ -58,28 +59,6 @@ function Collect-BlockDiagnostics {
     }
 }
 
-function Get-MameMediaPath([string]$PrimaryRomPath) {
-    if ([string]::IsNullOrWhiteSpace($PrimaryRomPath)) {
-        return ""
-    }
-
-    $primary = [System.IO.Path]::GetFullPath($PrimaryRomPath)
-    $paths = New-Object System.Collections.Generic.List[string]
-    $paths.Add($primary)
-
-    $mameHome = Split-Path -Parent $primary
-    foreach ($candidate in @(
-        (Join-Path $mameHome "chds"),
-        (Join-Path $mameHome "chd")
-    )) {
-        if ((Test-Path $candidate) -and -not $paths.Contains($candidate)) {
-            $paths.Add([System.IO.Path]::GetFullPath($candidate))
-        }
-    }
-
-    return ($paths.ToArray() -join ';')
-}
-
 if (-not (Test-Path $bash)) {
     throw "MSYS2 bash not found at '$bash'."
 }
@@ -88,6 +67,9 @@ if (-not (Test-Path $ucrtBin)) {
 }
 if (-not (Test-Path $mameSource)) {
     throw "MAME source tree not found at '$MameRoot'."
+}
+if (-not (Test-Path $mediaResolver)) {
+    throw "MAME media resolver not found at '$mediaResolver'."
 }
 if (-not (Test-Path (Join-Path $OpenXrSdk "include\openxr\openxr.h"))) {
     throw "OpenXR SDK headers not found at '$OpenXrSdk'."
@@ -213,13 +195,20 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 if (-not [string]::IsNullOrWhiteSpace($RomPath)) {
-    $mameMediaPath = Get-MameMediaPath $RomPath
+    $resolvedOutput = @(& $mediaResolver -RomPath $RomPath)
+    $mameMediaPath = $env:A51XR_MAME_MEDIA_PATH
+    if ([string]::IsNullOrWhiteSpace($mameMediaPath) -and $resolvedOutput.Count -gt 0) {
+        $mameMediaPath = [string]$resolvedOutput[$resolvedOutput.Count - 1]
+    }
+    if ([string]::IsNullOrWhiteSpace($mameMediaPath)) {
+        throw "Unable to resolve a MAME media path from '$RomPath'."
+    }
     Write-Host "MAME media path: $mameMediaPath"
 
-    $romZip = Join-Path $RomPath "area51.zip"
-    Write-Host "Area 51 ROM zip: $romZip = $(Test-Path $romZip)"
     foreach ($mediaRoot in ($mameMediaPath -split ';')) {
+        $romCandidate = Join-Path $mediaRoot "area51.zip"
         $chdCandidate = Join-Path $mediaRoot "area51\area51.chd"
+        Write-Host "Area 51 ROM candidate: $romCandidate = $(Test-Path $romCandidate)"
         Write-Host "Area 51 CHD candidate: $chdCandidate = $(Test-Path $chdCandidate)"
     }
 
@@ -242,7 +231,14 @@ if (-not [string]::IsNullOrWhiteSpace($RomPath)) {
     if (Test-Path $verifyErr) { Get-Content $verifyErr | Write-Host }
 
     if ($verify.ExitCode -ne 0) {
-        throw "MAME could not verify Area 51 using media path '$mameMediaPath'. Full audit is saved in the acceptance diagnostics. The current MAME parent set requires area51.zip plus the Area 51 CHD (normally area51\area51.chd)."
+        $audit = @()
+        if (Test-Path $verifyOut) { $audit += Get-Content $verifyOut }
+        if (Test-Path $verifyErr) { $audit += Get-Content $verifyErr }
+        $missingHint = ""
+        if ($audit -match "NOT FOUND|missing|incorrect|wrong length|wrong checksum") {
+            $missingHint = " MAME reported missing or mismatched media in the audit above."
+        }
+        throw "MAME could not verify Area 51 using media path '$mameMediaPath'.$missingHint Full audit is saved in the acceptance diagnostics."
     }
 
     $env:A51XR_MAME_MEDIA_PATH = $mameMediaPath
