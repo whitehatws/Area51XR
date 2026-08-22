@@ -14,7 +14,9 @@ param(
 
     [switch]$RunVr,
 
-    [switch]$SkipVr
+    [switch]$SkipVr,
+
+    [switch]$AllowModifiedMedia
 )
 
 $ErrorActionPreference = "Stop"
@@ -87,6 +89,9 @@ try {
     if ($RunVr) {
         Write-Step "VR acceptance explicitly enabled."
     }
+    if ($AllowModifiedMedia) {
+        Write-Step "Intentional modified-media mode enabled; stock MAME checksum mismatches will be logged but will not block runtime validation when required files are present."
+    }
 
     Write-Step "MAME root: $MameRoot"
     Write-Step "OpenXR SDK root: $OpenXrSdk"
@@ -94,13 +99,18 @@ try {
     Write-Step "Depth model: $DepthModelPath"
     Write-Step "Running full bootstrap/build/model/capture sequence."
 
-    & (Join-Path $PSScriptRoot "bootstrap-windows.ps1") `
-        -MsysRoot $MsysRoot `
-        -MameRoot $MameRoot `
-        -OpenXrSdk $OpenXrSdk `
-        -OnnxRuntimeDir $OnnxRuntimeDir `
-        -DepthModelPath $DepthModelPath `
-        -RomPath $RomPath
+    $bootstrapArgs = @{
+        MsysRoot = $MsysRoot
+        MameRoot = $MameRoot
+        OpenXrSdk = $OpenXrSdk
+        OnnxRuntimeDir = $OnnxRuntimeDir
+        DepthModelPath = $DepthModelPath
+        RomPath = $RomPath
+    }
+    if ($AllowModifiedMedia) {
+        $bootstrapArgs.AllowModifiedMedia = $true
+    }
+    & (Join-Path $PSScriptRoot "bootstrap-windows.ps1") @bootstrapArgs
     if ($LASTEXITCODE -ne 0) {
         throw "bootstrap-windows.ps1 failed with exit code $LASTEXITCODE"
     }
