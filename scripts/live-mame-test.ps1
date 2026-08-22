@@ -47,6 +47,7 @@ $mame = $null
 try {
     Write-Host "Starting Area51XR bridge..."
     $host = Start-Process -FilePath $hostExe -ArgumentList $hostArgs -PassThru `
+        -WorkingDirectory (Split-Path -Parent $hostExe) `
         -RedirectStandardOutput $hostOut -RedirectStandardError $hostErr
 
     Start-Sleep -Milliseconds 500
@@ -57,6 +58,7 @@ try {
     Write-Host "Starting Area 51 in patched MAME..."
     $mameArgs = @("area51", "-rompath", $RomPath, "-window", "-verbose")
     $mame = Start-Process -FilePath $MameExe -ArgumentList $mameArgs -PassThru `
+        -WorkingDirectory (Split-Path -Parent $MameExe) `
         -RedirectStandardOutput $mameOut -RedirectStandardError $mameErr
 
     $deadline = (Get-Date).AddSeconds($DurationSeconds)
@@ -69,7 +71,7 @@ try {
                 Write-Host "Bridge traffic detected: $($Matches[0])"
                 Write-Host "LIVE MAME BRIDGE TEST PASSED"
                 Write-Host "Logs: $logDir"
-                exit 0
+                return
             }
         }
 
