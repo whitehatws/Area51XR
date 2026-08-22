@@ -26,12 +26,20 @@ $captureExe = Join-Path $root "build-mingw\area51xr-capture.exe"
 $reconstructExe = Join-Path $root "build-mingw\area51xr-reconstruct.exe"
 $analyzeScript = Join-Path $PSScriptRoot "analyze-reconstruction-sequence.ps1"
 
+function Test-MameMediaPath([string]$Value) {
+    if ([string]::IsNullOrWhiteSpace($Value)) { return $false }
+    foreach ($entry in ($Value -split ';')) {
+        if ([string]::IsNullOrWhiteSpace($entry) -or -not (Test-Path $entry)) { return $false }
+    }
+    return $true
+}
+
 if ([string]::IsNullOrWhiteSpace($OutputDir)) {
     $stamp = Get-Date -Format "yyyyMMdd-HHmmss"
     $OutputDir = Join-Path $root "logs\sequence-$stamp"
 }
 
-$required = @($hostExe, $captureExe, $reconstructExe, $analyzeScript, $MameExe, $RomPath)
+$required = @($hostExe, $captureExe, $reconstructExe, $analyzeScript, $MameExe)
 if (-not [string]::IsNullOrWhiteSpace($DepthModelPath)) {
     $required += $DepthModelPath
 }
@@ -39,6 +47,9 @@ foreach ($path in $required) {
     if (-not (Test-Path $path)) {
         throw "Required path not found: $path"
     }
+}
+if (-not (Test-MameMediaPath $RomPath)) {
+    throw "MAME media path is invalid: $RomPath"
 }
 if ($FrameCount -lt 1) {
     throw "FrameCount must be at least 1."
