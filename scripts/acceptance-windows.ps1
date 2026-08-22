@@ -24,7 +24,7 @@ if ([string]::IsNullOrWhiteSpace($MameRoot)) {
     $MameRoot = Join-Path $root "external\mame"
 }
 if ([string]::IsNullOrWhiteSpace($OpenXrSdk)) {
-    $OpenXrSdk = Join-Path $root "external\openxr-sdk"
+    $OpenXrSdk = Join-Path $MsysRoot "ucrt64"
 }
 if ([string]::IsNullOrWhiteSpace($OnnxRuntimeDir)) {
     $OnnxRuntimeDir = Join-Path $root "external\onnxruntime-1.28.0"
@@ -113,7 +113,7 @@ try {
         }
 
         Write-Step "Running VR acceptance harness."
-        & (Join-Path $PSScriptRoot "live-vr-test.ps1") -MameExe $mameExe -RomPath $RomPath
+        & (Join-Path $PSScriptRoot "live-vr-test.ps1") -MameExe $mameExe -RomPath $RomPath -MsysRoot $MsysRoot
         if ($LASTEXITCODE -ne 0) {
             throw "live-vr-test.ps1 failed with exit code $LASTEXITCODE"
         }
