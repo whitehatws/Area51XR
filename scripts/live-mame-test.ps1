@@ -15,14 +15,22 @@ $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent $PSScriptRoot
 $hostExe = Join-Path $root "build-mingw\area51xr.exe"
 
+function Test-MameMediaPath([string]$Value) {
+    if ([string]::IsNullOrWhiteSpace($Value)) { return $false }
+    foreach ($entry in ($Value -split ';')) {
+        if ([string]::IsNullOrWhiteSpace($entry) -or -not (Test-Path $entry)) { return $false }
+    }
+    return $true
+}
+
 if (-not (Test-Path $hostExe)) {
     throw "Area51XR host not found at '$hostExe'. Run smoke-test.ps1 first."
 }
 if (-not (Test-Path $MameExe)) {
     throw "Patched MAME executable not found at '$MameExe'."
 }
-if (-not (Test-Path $RomPath)) {
-    throw "ROM path not found at '$RomPath'."
+if (-not (Test-MameMediaPath $RomPath)) {
+    throw "MAME media path is invalid: $RomPath"
 }
 if ($DurationSeconds -lt 5) {
     throw "DurationSeconds must be at least 5."
