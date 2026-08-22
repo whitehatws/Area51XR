@@ -76,16 +76,16 @@ foreach ($registryPath in @(
 $runtimeLines | Set-Content -Path $runtimeFile -Encoding UTF8
 Write-Host ($runtimeLines -join [Environment]::NewLine)
 
-$host = $null
+$hostProcess = $null
 $mame = $null
 try {
     Write-Host "Starting Area51XR OpenXR host..."
-    $host = Start-Process -FilePath $hostExe -ArgumentList @("--xr-bridge") -PassThru `
+    $hostProcess = Start-Process -FilePath $hostExe -ArgumentList @("--xr-bridge") -PassThru `
         -WorkingDirectory (Split-Path -Parent $hostExe) `
         -RedirectStandardOutput $hostOut -RedirectStandardError $hostErr
 
     Start-Sleep -Milliseconds 750
-    if ($host.HasExited) {
+    if ($hostProcess.HasExited) {
         $errorText = if (Test-Path $hostErr) { Get-Content -Raw $hostErr } else { "" }
         throw "Area51XR OpenXR host exited during startup. $errorText"
     }
@@ -104,7 +104,7 @@ try {
     while ((Get-Date) -lt $deadline) {
         Start-Sleep -Milliseconds 400
 
-        if ($host.HasExited) {
+        if ($hostProcess.HasExited) {
             $errorText = if (Test-Path $hostErr) { Get-Content -Raw $hostErr } else { "" }
             throw "Area51XR OpenXR host exited early. $errorText"
         }
@@ -150,7 +150,7 @@ finally {
     if ($mame -and -not $mame.HasExited) {
         Stop-Process -Id $mame.Id -Force -ErrorAction SilentlyContinue
     }
-    if ($host -and -not $host.HasExited) {
-        Stop-Process -Id $host.Id -Force -ErrorAction SilentlyContinue
+    if ($hostProcess -and -not $hostProcess.HasExited) {
+        Stop-Process -Id $hostProcess.Id -Force -ErrorAction SilentlyContinue
     }
 }
