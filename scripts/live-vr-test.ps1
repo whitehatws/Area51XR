@@ -126,7 +126,7 @@ try {
             ) -join [Environment]::NewLine
             Set-Content -Path $resultFile -Value $result
             Write-Host $result
-            exit 0
+            return
         }
     }
 
