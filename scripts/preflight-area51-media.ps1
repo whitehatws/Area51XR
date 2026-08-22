@@ -21,6 +21,52 @@ if (-not (Test-Path $MameRoot)) {
     throw "MAME root not found: $MameRoot"
 }
 
+function Show-AlternateArea51Sets([string]$SearchRoot) {
+    $installRoot = Split-Path -Parent ([System.IO.Path]::GetFullPath($SearchRoot))
+    Write-Host ""
+    Write-Host "Scanning $installRoot for alternate Area 51 board-ROM revisions..."
+
+    $allFiles = @(Get-ChildItem -Path $installRoot -File -Recurse -ErrorAction SilentlyContinue)
+    $names = @{}
+    foreach ($file in $allFiles) {
+        $names[$file.Name.ToLowerInvariant()] = $file.FullName
+    }
+
+    $sets = @(
+        [ordered]@{
+            Name = "area51 (R3000)"
+            Files = @("2-c_area_51_hh.hh", "2-c_area_51_hl.hl", "2-c_area_51_lh.lh", "2-c_area_51_ll.ll", "jagwave.rom")
+        },
+        [ordered]@{
+            Name = "area51t (68020 Time Warner)"
+            Files = @("136105-0003-q_h.3h", "136105-0002-q_p.3p", "136105-0001-q_m.3m", "136105-0000-q_k.3k", "jagwave.rom")
+        },
+        [ordered]@{
+            Name = "area51ta (older 68020 Time Warner)"
+            Files = @("136105-0003c.3h", "136105-0002c.3p", "136105-0001c.3m", "136105-0000c.3k", "jagwave.rom")
+        }
+    )
+
+    foreach ($set in $sets) {
+        $found = 0
+        foreach ($required in $set.Files) {
+            if ($names.ContainsKey($required.ToLowerInvariant())) { $found++ }
+        }
+        Write-Host "$($set.Name): $found/$($set.Files.Count) expected ROM files found"
+        if ($found -gt 0) {
+            foreach ($required in $set.Files) {
+                $key = $required.ToLowerInvariant()
+                if ($names.ContainsKey($key)) {
+                    Write-Host "  FOUND   $required -> $($names[$key])"
+                }
+                else {
+                    Write-Host "  MISSING $required"
+                }
+            }
+        }
+    }
+}
+
 $mameExe = @(
     (Join-Path $MameRoot "mamearea51xr.exe"),
     (Join-Path $MameRoot "area51xr.exe")
@@ -78,7 +124,8 @@ if ($missingLines.Count -gt 0) {
     Write-Host ""
     Write-Host "AREA 51 MEDIA PREFLIGHT: MISSING REQUIRED FILES"
     $missingLines | ForEach-Object { Write-Host "  $_" }
-    throw "MAME reports required Area 51 media as missing. Add the listed files to the area51 set before runtime acceptance."
+    Show-AlternateArea51Sets -SearchRoot $RomPath
+    throw "MAME reports required Area 51 board ROMs as missing. The CHD alone is not sufficient; use the alternate-set scan above to see whether a different legal Area 51 ROM revision is already present."
 }
 
 if ($AllowModifiedMedia) {
