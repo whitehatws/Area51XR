@@ -17,6 +17,14 @@ $hostExe = Join-Path $root "build-mingw\area51xr.exe"
 $loader = Join-Path $root "build-mingw\openxr_loader.dll"
 $ucrtBin = Join-Path $MsysRoot "ucrt64\bin"
 
+function Test-MameMediaPath([string]$Value) {
+    if ([string]::IsNullOrWhiteSpace($Value)) { return $false }
+    foreach ($entry in ($Value -split ';')) {
+        if ([string]::IsNullOrWhiteSpace($entry) -or -not (Test-Path $entry)) { return $false }
+    }
+    return $true
+}
+
 if (-not (Test-Path $hostExe)) {
     throw "Area51XR host not found at '$hostExe'. Run bootstrap-windows.ps1 first."
 }
@@ -26,8 +34,8 @@ if (-not (Test-Path $loader)) {
 if (-not (Test-Path $MameExe)) {
     throw "Patched MAME executable not found at '$MameExe'."
 }
-if (-not (Test-Path $RomPath)) {
-    throw "ROM path not found at '$RomPath'."
+if (-not (Test-MameMediaPath $RomPath)) {
+    throw "MAME media path is invalid: $RomPath"
 }
 if (-not (Test-Path $ucrtBin)) {
     throw "MSYS2 UCRT64 runtime directory not found at '$ucrtBin'."
