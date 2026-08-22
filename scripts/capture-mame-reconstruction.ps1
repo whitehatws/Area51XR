@@ -21,12 +21,20 @@ $hostExe = Join-Path $root "build-mingw\area51xr.exe"
 $captureExe = Join-Path $root "build-mingw\area51xr-capture.exe"
 $reconstructExe = Join-Path $root "build-mingw\area51xr-reconstruct.exe"
 
+function Test-MameMediaPath([string]$Value) {
+    if ([string]::IsNullOrWhiteSpace($Value)) { return $false }
+    foreach ($entry in ($Value -split ';')) {
+        if ([string]::IsNullOrWhiteSpace($entry) -or -not (Test-Path $entry)) { return $false }
+    }
+    return $true
+}
+
 if ([string]::IsNullOrWhiteSpace($OutputDir)) {
     $stamp = Get-Date -Format "yyyyMMdd-HHmmss"
     $OutputDir = Join-Path $root "logs\capture-$stamp"
 }
 
-$required = @($hostExe, $captureExe, $reconstructExe, $MameExe, $RomPath)
+$required = @($hostExe, $captureExe, $reconstructExe, $MameExe)
 if (-not [string]::IsNullOrWhiteSpace($DepthModelPath)) {
     $required += $DepthModelPath
 }
@@ -34,6 +42,9 @@ foreach ($path in $required) {
     if (-not (Test-Path $path)) {
         throw "Required path not found: $path"
     }
+}
+if (-not (Test-MameMediaPath $RomPath)) {
+    throw "MAME media path is invalid: $RomPath"
 }
 if ($StartupSeconds -lt 3) {
     throw "StartupSeconds must be at least 3."
