@@ -45,9 +45,25 @@ if ([string]::IsNullOrWhiteSpace($mameMediaPath)) {
 
 Write-Host ""
 Write-Host "Running MAME Area 51 media audit..."
-$output = & $mameExe -rompath $mameMediaPath -verifyroms area51 2>&1
-$exitCode = $LASTEXITCODE
+$auditDir = Join-Path $root "logs\media-preflight"
+New-Item -ItemType Directory -Force -Path $auditDir | Out-Null
+$auditOut = Join-Path $auditDir "mame-verify-area51.out.txt"
+$auditErr = Join-Path $auditDir "mame-verify-area51.err.txt"
+Remove-Item $auditOut, $auditErr -Force -ErrorAction SilentlyContinue
+
+$verify = Start-Process -FilePath $mameExe `
+    -ArgumentList @("-rompath", $mameMediaPath, "-verifyroms", "area51") `
+    -WorkingDirectory (Split-Path -Parent $mameExe) `
+    -PassThru -Wait -NoNewWindow `
+    -RedirectStandardOutput $auditOut -RedirectStandardError $auditErr
+$exitCode = $verify.ExitCode
+
+$output = @()
+if (Test-Path $auditOut) { $output += Get-Content $auditOut }
+if (Test-Path $auditErr) { $output += Get-Content $auditErr }
 $output | Write-Host
+Write-Host "MAME audit exit code: $exitCode"
+Write-Host "Audit files: $auditDir"
 
 if ($exitCode -eq 0) {
     Write-Host ""
@@ -55,8 +71,9 @@ if ($exitCode -eq 0) {
     exit 0
 }
 
-$text = ($output -join [Environment]::NewLine)
-$missingLines = @($output | Where-Object { $_ -match '(?i)\bNOT FOUND\b|required files are missing|not found in (the )?rompath' })
+$missingLines = @($output | Where-Object {
+    $_ -match '(?i)\bNOT FOUND\b|required files are missing|not found in (the )?rompath|is missing|missing required'
+})
 if ($missingLines.Count -gt 0) {
     Write-Host ""
     Write-Host "AREA 51 MEDIA PREFLIGHT: MISSING REQUIRED FILES"
