@@ -167,8 +167,6 @@ function Set-ScopedEnvironment([string]$Name, [AllowNull()][string]$Value) {
     }
 }
 
-# Remove externally forced layer overrides, but preserve Virtual Desktop's own
-# implicit compatibility layer. Disable only unrelated third-party implicit layers.
 Set-ScopedEnvironment "XR_ENABLE_API_LAYERS" $null
 Set-ScopedEnvironment "XR_API_LAYER_PATH" $null
 Set-ScopedEnvironment "XR_LOADER_DEBUG" "warn"
@@ -312,6 +310,8 @@ try {
     Write-Host "OpenXR runtime: $($selectedRuntime.Name)"
     Write-Host "MAME low-latency mode: enabled"
     Write-Host "Right controller: aim + trigger. Point outside the game screen and pull trigger to reload."
+    Write-Host "Quest B: insert coin"
+    Write-Host "Quest A: start / continue"
     Write-Host "Keyboard fallback: 5 = coin, 1 = Player 1 start."
     Write-Host "Leave this PowerShell window open while playing."
     Write-Host "Press Ctrl+C here, or exit MAME, to stop the session."
