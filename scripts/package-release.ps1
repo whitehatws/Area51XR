@@ -3,7 +3,8 @@ param(
     [string]$MameRoot = "",
     [string]$MsysRoot = "C:\msys64",
     [string]$OutputDir = "",
-    [switch]$SkipSourceArchive
+    [switch]$SkipSourceArchive,
+    [switch]$AllowDirty
 )
 
 $ErrorActionPreference = "Stop"
@@ -18,6 +19,7 @@ if ([string]::IsNullOrWhiteSpace($OutputDir)) {
 $buildDir = Join-Path $root "build-mingw"
 $releaseTemplate = Join-Path $root "release"
 $ucrtBin = Join-Path $MsysRoot "ucrt64\bin"
+$ucrtLicenses = Join-Path $MsysRoot "ucrt64\share\licenses"
 $hostExe = Join-Path $buildDir "area51xr.exe"
 $loaderDll = Join-Path $buildDir "openxr_loader.dll"
 $objdump = Join-Path $ucrtBin "objdump.exe"
@@ -37,6 +39,17 @@ foreach ($required in @($MameRoot, $buildDir, $releaseTemplate, $ucrtBin, $hostE
     }
 }
 
+$area51xrCommit = (& git -C $root rev-parse HEAD).Trim()
+$mameCommit = (& git -C $MameRoot rev-parse HEAD).Trim()
+if ([string]::IsNullOrWhiteSpace($area51xrCommit) -or [string]::IsNullOrWhiteSpace($mameCommit)) {
+    throw "Unable to resolve source revisions for release packaging."
+}
+
+$area51xrStatus = @(& git -C $root status --porcelain)
+if ($area51xrStatus.Count -gt 0 -and -not $AllowDirty) {
+    throw "Area51XR working tree is dirty. Commit/stash changes before packaging, or use -AllowDirty for a non-publishable local package."
+}
+
 New-Item -ItemType Directory -Force -Path $OutputDir | Out-Null
 $stageName = "Area51XR-$Version-win64"
 $stage = Join-Path $OutputDir $stageName
@@ -48,11 +61,12 @@ Remove-Item $stage, $playerZip, $sourceZip, $tempRoot -Recurse -Force -ErrorActi
 New-Item -ItemType Directory -Force -Path $stage | Out-Null
 New-Item -ItemType Directory -Force -Path $tempRoot | Out-Null
 
-Write-Host "[1/7] Staging release template..."
+Write-Host "[1/8] Staging release template..."
 Copy-Item (Join-Path $releaseTemplate "*") $stage -Recurse -Force
 $binStage = Join-Path $stage "bin"
 $emulatorStage = Join-Path $stage "emulator"
-New-Item -ItemType Directory -Force -Path $binStage, $emulatorStage | Out-Null
+$licenseStage = Join-Path $stage "licenses"
+New-Item -ItemType Directory -Force -Path $binStage, $emulatorStage, $licenseStage | Out-Null
 
 Copy-Item $hostExe (Join-Path $binStage "area51xr.exe") -Force
 Copy-Item $loaderDll (Join-Path $binStage "openxr_loader.dll") -Force
@@ -89,19 +103,21 @@ function Stage-NativeDependencies([string]$ExePath, [string]$Destination) {
     }
 }
 
-Write-Host "[2/7] Staging native runtime dependencies..."
+Write-Host "[2/8] Staging native runtime dependencies..."
 Stage-NativeDependencies $hostExe $binStage
 Stage-NativeDependencies $emulatorExe $emulatorStage
 
-# ONNX Runtime is not used by the v1.0 flat-screen gameplay path, but the current
-# development host may be built with the optional backend available. Stage it if
-# the build produced a local copy so the binary remains self-contained.
-$onnxDll = Join-Path $buildDir "onnxruntime.dll"
-if (Test-Path $onnxDll) {
-    Copy-Item $onnxDll (Join-Path $binStage "onnxruntime.dll") -Force
+Write-Host "[3/8] Staging toolchain/OpenXR license files..."
+if (Test-Path $ucrtLicenses) {
+    $licenseDirs = @(Get-ChildItem -Path $ucrtLicenses -Directory -ErrorAction SilentlyContinue | Where-Object {
+        $_.Name -match '(?i)openxr|gcc|winpthread|mingw'
+    })
+    foreach ($licenseDir in $licenseDirs) {
+        Copy-Item $licenseDir.FullName (Join-Path $licenseStage $licenseDir.Name) -Recurse -Force
+    }
 }
 
-Write-Host "[3/7] Staging emulator licensing and source notice..."
+Write-Host "[4/8] Staging emulator licensing and source notice..."
 $copying = Join-Path $MameRoot "COPYING"
 $legalDir = Join-Path $MameRoot "docs\legal"
 if (-not (Test-Path $copying) -or -not (Test-Path $legalDir)) {
@@ -111,10 +127,6 @@ Copy-Item $copying (Join-Path $emulatorStage "COPYING") -Force
 New-Item -ItemType Directory -Force -Path (Join-Path $emulatorStage "docs") | Out-Null
 Copy-Item $legalDir (Join-Path $emulatorStage "docs\legal") -Recurse -Force
 
-$mameCommit = (& git -C $MameRoot rev-parse HEAD).Trim()
-if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($mameCommit)) {
-    throw "Unable to determine the MAME source revision."
-}
 $sourceNotice = @"
 AREA51XR MODIFIED EMULATOR SOURCE
 =================================
@@ -134,7 +146,20 @@ MAME is distributed under the GNU General Public License version 2 or later. See
 "@
 $sourceNotice | Set-Content -Path (Join-Path $emulatorStage "SOURCE.txt") -Encoding UTF8
 
-Write-Host "[4/7] Enforcing no-game-media release boundary..."
+$metadata = @"
+AREA51XR BUILD METADATA
+=======================
+Version: $Version
+Area51XR Git revision: $area51xrCommit
+MAME upstream Git revision: $mameCommit
+Package generated: $(Get-Date -Format o)
+Architecture: Windows x64
+Launch scope: OpenXR flat-screen VR/light-gun v1 gameplay path
+Game media included: NO
+"@
+$metadata | Set-Content -Path (Join-Path $stage "BUILD-METADATA.txt") -Encoding UTF8
+
+Write-Host "[5/8] Enforcing no-game-media release boundary..."
 $bannedNames = @(
     'area51.zip',
     'area51.chd',
@@ -152,7 +177,7 @@ if ($forbidden.Count -gt 0) {
     throw "Release packaging refused because game media was found in the player stage:`n$names"
 }
 
-Write-Host "[5/7] Creating player hashes and ZIP..."
+Write-Host "[6/8] Creating player hashes and ZIP..."
 $hashLines = Get-ChildItem -Path $stage -Recurse -File |
     Where-Object { $_.Name -ne 'SHA256SUMS.txt' } |
     Sort-Object FullName |
@@ -165,7 +190,7 @@ $hashLines | Set-Content -Path (Join-Path $stage "SHA256SUMS.txt") -Encoding ASC
 Compress-Archive -Path (Join-Path $stage "*") -DestinationPath $playerZip -CompressionLevel Optimal
 
 if (-not $SkipSourceArchive) {
-    Write-Host "[6/7] Building full corresponding-source ZIP..."
+    Write-Host "[7/8] Building full corresponding-source ZIP..."
     $upstreamZip = Join-Path $tempRoot "mame-upstream.zip"
     $sourceStage = Join-Path $tempRoot "mame-source"
     & git -C $MameRoot archive --format=zip --output=$upstreamZip HEAD
@@ -188,12 +213,13 @@ if (-not $SkipSourceArchive) {
         Copy-Item $sourceFile $destinationFile -Force
     }
 
-    $status = (& git -C $MameRoot status --short) -join [Environment]::NewLine
+    $mameStatus = (& git -C $MameRoot status --short) -join [Environment]::NewLine
     $buildNote = @"
 AREA51XR MAME CORRESPONDING SOURCE
 =================================
 
 Area51XR release: $Version
+Area51XR Git revision: $area51xrCommit
 Upstream MAME Git revision: $mameCommit
 
 This archive is the full MAME source snapshot for the revision above with the Area51XR source modifications used to build the bundled emulator overlaid in place.
@@ -207,8 +233,8 @@ Representative Area51XR subtarget build command from the source root:
 
   make SUBTARGET=area51xr SOURCES=src/mame/atari/jaguar.cpp
 
-Local source-tree status when this package was created:
-$status
+Local MAME source-tree status when this package was created:
+$mameStatus
 
 No Area 51 ROMs, CHDs, or other original game media are included.
 "@
@@ -216,12 +242,13 @@ No Area 51 ROMs, CHDs, or other original game media are included.
     Compress-Archive -Path (Join-Path $sourceStage "*") -DestinationPath $sourceZip -CompressionLevel Optimal
 }
 else {
-    Write-Host "[6/7] Corresponding-source ZIP skipped by request. Do not publish the player ZIP without publishing matching corresponding source."
+    Write-Host "[7/8] Corresponding-source ZIP skipped by request. Do not publish the player ZIP without publishing matching corresponding source."
 }
 
-Write-Host "[7/7] Release package complete."
+Write-Host "[8/8] Release package complete."
 Write-Host "Player: $playerZip"
 if (-not $SkipSourceArchive) { Write-Host "Source: $sourceZip" }
+Write-Host "Area51XR revision: $area51xrCommit"
 Write-Host "MAME revision: $mameCommit"
 Write-Host "No Area 51 game media was included."
 
