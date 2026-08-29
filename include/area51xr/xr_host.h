@@ -16,6 +16,8 @@ struct HostTickResult {
     bool offscreen{};
     NormalizedAim aim{};
     bool trigger_down{};
+    bool coin_down{};
+    bool start_down{};
     bool frame_presented{};
     FrameStatus frame{};
 };
