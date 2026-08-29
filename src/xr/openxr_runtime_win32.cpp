@@ -11,6 +11,7 @@
 #include <openxr/openxr_platform.h>
 
 #include "area51xr/openxr_runtime.h"
+#include "area51xr/xr_aim.h"
 
 #include <array>
 #include <cstring>
@@ -200,6 +201,25 @@ struct OpenXrRuntime::Impl {
         return true;
     }
 
+    bool suggest_bindings(const char* profile_path, const char* trigger_path) {
+        XrPath profile{}, aim_path{}, fire_path{};
+        if (XR_FAILED(xrStringToPath(instance, profile_path, &profile)) ||
+            XR_FAILED(xrStringToPath(instance, "/user/hand/right/input/aim/pose", &aim_path)) ||
+            XR_FAILED(xrStringToPath(instance, trigger_path, &fire_path))) {
+            return false;
+        }
+
+        const std::array<XrActionSuggestedBinding, 2> bindings{{
+            {aim_action, aim_path},
+            {fire_action, fire_path}
+        }};
+        XrInteractionProfileSuggestedBinding suggested{XR_TYPE_INTERACTION_PROFILE_SUGGESTED_BINDING};
+        suggested.interactionProfile = profile;
+        suggested.countSuggestedBindings = static_cast<std::uint32_t>(bindings.size());
+        suggested.suggestedBindings = bindings.data();
+        return XR_SUCCEEDED(xrSuggestInteractionProfileBindings(instance, &suggested));
+    }
+
     bool create_actions() {
         XrActionSetCreateInfo set_info{XR_TYPE_ACTION_SET_CREATE_INFO};
         std::strncpy(set_info.actionSetName, "gameplay", XR_MAX_ACTION_SET_NAME_SIZE - 1);
@@ -232,23 +252,14 @@ struct OpenXrRuntime::Impl {
             return fail("fire action creation failed");
         }
 
-        XrPath simple_profile{}, aim_path{}, select_path{};
-        if (XR_FAILED(xrStringToPath(instance, "/interaction_profiles/khr/simple_controller", &simple_profile)) ||
-            XR_FAILED(xrStringToPath(instance, "/user/hand/right/input/aim/pose", &aim_path)) ||
-            XR_FAILED(xrStringToPath(instance, "/user/hand/right/input/select/click", &select_path))) {
-            return fail("simple controller paths unavailable");
-        }
-
-        const std::array<XrActionSuggestedBinding, 2> bindings{{
-            {aim_action, aim_path},
-            {fire_action, select_path}
-        }};
-        XrInteractionProfileSuggestedBinding suggested{XR_TYPE_INTERACTION_PROFILE_SUGGESTED_BINDING};
-        suggested.interactionProfile = simple_profile;
-        suggested.countSuggestedBindings = static_cast<std::uint32_t>(bindings.size());
-        suggested.suggestedBindings = bindings.data();
-        if (XR_FAILED(xrSuggestInteractionProfileBindings(instance, &suggested))) {
-            return fail("xrSuggestInteractionProfileBindings failed");
+        const bool simple_ok = suggest_bindings(
+            "/interaction_profiles/khr/simple_controller",
+            "/user/hand/right/input/select/click");
+        const bool touch_ok = suggest_bindings(
+            "/interaction_profiles/oculus/touch_controller",
+            "/user/hand/right/input/trigger/value");
+        if (!simple_ok && !touch_ok) {
+            return fail("no supported controller bindings could be suggested");
         }
         return true;
     }
@@ -550,8 +561,11 @@ bool OpenXrRuntime::present(const VideoFrameView& frame) {
         };
         quad.subImage.imageArrayIndex = 0;
         quad.pose.orientation.w = 1.0f;
-        quad.pose.position = {0.0f, 0.0f, -1.0f};
-        quad.size = {1.6f, 0.9f};
+        quad.pose.position = {0.0f, 0.0f, -kDefaultScreenDistanceMeters};
+        quad.size = {
+            kDefaultScreenWidthMeters,
+            kDefaultScreenWidthMeters * static_cast<float>(frame.height) / static_cast<float>(frame.width)
+        };
         layers[0] = reinterpret_cast<const XrCompositionLayerBaseHeader*>(&quad);
         layer_count = 1;
     }
