@@ -23,7 +23,9 @@ struct GunState {
     float aim_y;
     std::uint8_t trigger;
     std::uint8_t offscreen;
-    std::uint8_t reserved[6];
+    std::uint8_t coin;
+    std::uint8_t start;
+    std::uint8_t reserved[4];
 };
 
 struct FrameHeader {
@@ -212,6 +214,28 @@ inline std::uint8_t normalized_to_mame_axis(float value)
 {
     const float clamped = std::clamp(value, 0.0f, 1.0f);
     return static_cast<std::uint8_t>(clamped * 255.0f + 0.5f);
+}
+
+inline std::uint16_t apply_system_input(std::uint16_t input)
+{
+    if (const auto* const xr = gun_state())
+    {
+        input |= 0x0001;
+        if (xr->coin)
+            input &= ~std::uint16_t(0x0001);
+    }
+    return input;
+}
+
+inline std::uint32_t apply_p1_p2_input(std::uint32_t input)
+{
+    if (const auto* const xr = gun_state())
+    {
+        input |= 0x01000000;
+        if (xr->start)
+            input &= ~std::uint32_t(0x01000000);
+    }
+    return input;
 }
 
 } // namespace area51xr_mame
