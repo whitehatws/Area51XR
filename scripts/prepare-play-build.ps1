@@ -17,6 +17,7 @@ $onnxRuntimeDir = Join-Path $root "external\onnxruntime-1.28.0"
 $hostBuildScript = Join-Path $PSScriptRoot "build-area51xr-host.sh"
 $mameBuildScript = Join-Path $PSScriptRoot "build-mame-area51xr.sh"
 $preflight = Join-Path $PSScriptRoot "preflight-area51-media.ps1"
+$controlsPatch = Join-Path $PSScriptRoot "apply-mame-controls-patch.ps1"
 
 function ConvertTo-MsysPath([string]$Path) {
     $full = [System.IO.Path]::GetFullPath($Path)
@@ -28,14 +29,15 @@ function ConvertTo-MsysPath([string]$Path) {
     return ($full -replace '\\', '/')
 }
 
-foreach ($required in @($RomPath, $MameRoot, $bash, $ucrtBin, $hostBuildScript, $mameBuildScript, $preflight)) {
+foreach ($required in @($RomPath, $MameRoot, $bash, $ucrtBin, $hostBuildScript, $mameBuildScript, $preflight, $controlsPatch)) {
     if (-not (Test-Path $required)) {
         throw "Required play-build path not found: $required"
     }
 }
 
-Write-Host "[1/4] Applying current Area51XR MAME patch..."
+Write-Host "[1/4] Applying current Area51XR MAME patches..."
 & (Join-Path $PSScriptRoot "apply-mame-patch.ps1") -MameRoot $MameRoot
+& $controlsPatch -MameRoot $MameRoot
 
 $env:A51XR_ROOT_MSYS = ConvertTo-MsysPath $root
 $env:A51XR_MAME_ROOT_MSYS = ConvertTo-MsysPath $MameRoot
