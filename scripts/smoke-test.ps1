@@ -170,7 +170,28 @@ export MINGW_PACKAGE_PREFIX=mingw-w64-ucrt-x86_64
 export PATH=/ucrt64/bin:/usr/bin:$PATH
 printf 'MAME toolchain: MSYSTEM=%s MINGW_PREFIX=%s\n' "$MSYSTEM" "$MINGW_PREFIX"
 cd "$A51XR_MAME_ROOT_MSYS"
-make SUBTARGET=area51xr SOURCES=src/mame/atari/jaguar.cpp REGENIE=1 -j"$A51XR_MAME_JOBS"
+
+PROJECT_MAKEFILE="build/projects/windows/mamearea51xr/gmake-mingw64-gcc/Makefile"
+if [ -f "$PROJECT_MAKEFILE" ]; then
+    echo "Using existing generated MAME project files for incremental build."
+    make SUBTARGET=area51xr SOURCES=src/mame/atari/jaguar.cpp -j"$A51XR_MAME_JOBS"
+else
+    echo "Generated MAME project files are missing; repairing genie before regeneration."
+    GENIE="3rdparty/genie/bin/windows/genie.exe"
+    if [ -f "$GENIE" ]; then
+        chmod +x "$GENIE" 2>/dev/null || true
+    fi
+    if ! "$GENIE" --help >/dev/null 2>&1; then
+        rm -f "$GENIE"
+        make -C 3rdparty/genie PROJECT_TYPE=gmake -j"$A51XR_MAME_JOBS"
+        chmod +x "$GENIE" 2>/dev/null || true
+    fi
+    if ! "$GENIE" --help >/dev/null 2>&1; then
+        echo "ERROR: MAME genie generator is still not runnable after local rebuild." >&2
+        exit 126
+    fi
+    make SUBTARGET=area51xr SOURCES=src/mame/atari/jaguar.cpp REGENIE=1 -j"$A51XR_MAME_JOBS"
+fi
 '@
 & $bash -lc $mameBuildCommand
 if ($LASTEXITCODE -ne 0) {
@@ -207,13 +228,28 @@ if (-not [string]::IsNullOrWhiteSpace($RomPath)) {
     }
     Write-Host "MAME media path: $mameMediaPath"
 
+    $romFound = $false
+    $looseRomFound = $false
+    $chdFound = $false
     foreach ($mediaRoot in ($mameMediaPath -split ';')) {
-        $romZipCandidate = Join-Path $mediaRoot "area51.zip"
-        $looseSetCandidate = Join-Path $mediaRoot "area51"
+        $romCandidate = Join-Path $mediaRoot "area51.zip"
+        $looseRomCandidate = Join-Path $mediaRoot "area51\2-c_area_51_hh.hh"
         $chdCandidate = Join-Path $mediaRoot "area51\area51.chd"
-        Write-Host "Area 51 ROM archive candidate: $romZipCandidate = $(Test-Path $romZipCandidate)"
-        Write-Host "Area 51 loose-set directory: $looseSetCandidate = $(Test-Path $looseSetCandidate)"
-        Write-Host "Area 51 CHD candidate: $chdCandidate = $(Test-Path $chdCandidate)"
+        $romHere = Test-Path $romCandidate
+        $looseRomHere = Test-Path $looseRomCandidate
+        $chdHere = Test-Path $chdCandidate
+        if ($romHere) { $romFound = $true }
+        if ($looseRomHere) { $looseRomFound = $true }
+        if ($chdHere) { $chdFound = $true }
+        Write-Host "Area 51 ROM archive candidate: $romCandidate = $romHere"
+        Write-Host "Area 51 loose ROM candidate: $looseRomCandidate = $looseRomHere"
+        Write-Host "Area 51 CHD candidate: $chdCandidate = $chdHere"
+    }
+    if (-not $romFound -and -not $looseRomFound) {
+        throw "Area 51 board ROM set was not found in the resolved MAME media path '$mameMediaPath'."
+    }
+    if (-not $chdFound) {
+        throw "Area 51 CHD area51\area51.chd was not found in the resolved MAME media path '$mameMediaPath'."
     }
 
     $diagDir = $env:A51XR_ACCEPTANCE_DIR
@@ -224,7 +260,7 @@ if (-not [string]::IsNullOrWhiteSpace($RomPath)) {
     $verifyOut = Join-Path $diagDir "mame-verify-area51.out.txt"
     $verifyErr = Join-Path $diagDir "mame-verify-area51.err.txt"
 
-    Write-Host "Verifying Area 51 media with MAME..."
+    Write-Host "Verifying Area 51 ROM/CHD set with MAME..."
     $verify = Start-Process -FilePath $mameExe `
         -ArgumentList @("-rompath", $mameMediaPath, "-verifyroms", "area51") `
         -WorkingDirectory (Split-Path -Parent $mameExe) `
@@ -238,17 +274,20 @@ if (-not [string]::IsNullOrWhiteSpace($RomPath)) {
         $audit = @()
         if (Test-Path $verifyOut) { $audit += Get-Content $verifyOut }
         if (Test-Path $verifyErr) { $audit += Get-Content $verifyErr }
-        $auditText = ($audit -join [Environment]::NewLine)
-        $missingMedia = $auditText -match '(?im)\bNOT FOUND\b|required files are missing|not found in (the )?rompath'
-
-        if ($AllowModifiedMedia -and -not $missingMedia) {
-            Write-Warning "MAME's stock Area 51 audit reported checksum/length differences, but -AllowModifiedMedia is enabled and no required media is reported missing. Continuing with runtime validation."
-        }
-        elseif ($AllowModifiedMedia -and $missingMedia) {
-            throw "MAME reports required Area 51 media as NOT FOUND. Modified checksums are allowed, but missing files are not. Full audit is saved in the acceptance diagnostics."
+        if ($AllowModifiedMedia) {
+            $missingLines = @($audit | Where-Object {
+                $_ -match '(?i)\bNOT FOUND\b|required files are missing|not found in (the )?rompath|is missing|missing required'
+            })
+            if ($missingLines.Count -gt 0) {
+                throw "MAME reports required Area 51 media as missing. Modified-media mode only permits intentional checksum/length differences."
+            }
+            Write-Warning "MAME's stock Area 51 audit reported a mismatch, but -AllowModifiedMedia is enabled and no required files are missing. Continuing with runtime validation."
         }
         else {
-            $missingHint = if ($missingMedia) { " MAME reported required media as missing." } else { " MAME reported mismatched media." }
+            $missingHint = ""
+            if ($audit -match "NOT FOUND|missing|incorrect|wrong length|wrong checksum") {
+                $missingHint = " MAME reported missing or mismatched media in the audit above."
+            }
             throw "MAME could not verify Area 51 using media path '$mameMediaPath'.$missingHint Full audit is saved in the acceptance diagnostics. If this is an intentional project-modified dump, rerun acceptance with -AllowModifiedMedia."
         }
     }
