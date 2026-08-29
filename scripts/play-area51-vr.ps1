@@ -2,8 +2,6 @@ param(
     [string]$RomPath = "D:\MAME\roms",
     [string]$MsysRoot = "C:\msys64",
     [string]$MameRoot = "",
-    [string]$OpenXrManifest = "",
-    [int]$OpenXrReadyTimeoutSeconds = 45,
     [switch]$SkipBuild
 )
 
@@ -18,20 +16,10 @@ $ucrtBin = Join-Path $MsysRoot "ucrt64\bin"
 $resolver = Join-Path $PSScriptRoot "resolve-mame-media.ps1"
 $preparePlay = Join-Path $PSScriptRoot "prepare-play-build.ps1"
 
-if (-not (Test-Path $RomPath)) {
-    throw "ROM path not found: $RomPath"
-}
-if (-not (Test-Path $MameRoot)) {
-    throw "MAME source root not found: $MameRoot"
-}
-if (-not (Test-Path $resolver)) {
-    throw "Media resolver not found: $resolver"
-}
-if (-not (Test-Path $preparePlay)) {
-    throw "Play-build preparation script not found: $preparePlay"
-}
-if ($OpenXrReadyTimeoutSeconds -lt 5) {
-    throw "OpenXrReadyTimeoutSeconds must be at least 5."
+foreach ($required in @($RomPath, $MameRoot, $resolver, $preparePlay)) {
+    if (-not (Test-Path $required)) {
+        throw "Required play path not found: $required"
+    }
 }
 
 if (-not $SkipBuild) {
@@ -78,168 +66,222 @@ $hostErr = Join-Path $logDir "area51xr.err.log"
 $mameOut = Join-Path $logDir "mame.log"
 $mameErr = Join-Path $logDir "mame.err.log"
 $runtimeLog = Join-Path $logDir "openxr-runtime.txt"
-
-function Get-ActiveRuntime([string]$RegistryPath) {
-    try {
-        return [string](Get-ItemProperty -Path $RegistryPath -Name ActiveRuntime -ErrorAction Stop).ActiveRuntime
-    }
-    catch {
-        return ""
-    }
-}
-
-function Find-VirtualDesktopOpenXrManifest {
-    $candidates = New-Object System.Collections.Generic.List[string]
-
-    foreach ($active in @(
-        (Get-ActiveRuntime "HKLM:\SOFTWARE\Khronos\OpenXR\1"),
-        (Get-ActiveRuntime "HKCU:\SOFTWARE\Khronos\OpenXR\1")
-    )) {
-        if (-not [string]::IsNullOrWhiteSpace($active) -and $active -match '(?i)virtual.?desktop' -and -not $candidates.Contains($active)) {
-            $candidates.Add($active)
-        }
-    }
-
-    foreach ($programRoot in @($env:ProgramFiles, ${env:ProgramFiles(x86)})) {
-        if ([string]::IsNullOrWhiteSpace($programRoot)) { continue }
-        $streamerRoot = Join-Path $programRoot "Virtual Desktop Streamer"
-        foreach ($candidate in @(
-            (Join-Path $streamerRoot "OpenXR\virtualdesktop-openxr.json"),
-            (Join-Path $streamerRoot "virtualdesktop-openxr.json")
-        )) {
-            if (-not $candidates.Contains($candidate)) {
-                $candidates.Add($candidate)
-            }
-        }
-        if (Test-Path $streamerRoot) {
-            foreach ($found in @(Get-ChildItem -Path $streamerRoot -Filter "*openxr*.json" -File -Recurse -ErrorAction SilentlyContinue |
-                Where-Object { $_.Name -notmatch '(?i)-32\.json$' })) {
-                if (-not $candidates.Contains($found.FullName)) {
-                    $candidates.Add($found.FullName)
-                }
-            }
-        }
-    }
-
-    return $candidates | Where-Object { Test-Path $_ } | Select-Object -First 1
-}
-
-function Resolve-RuntimeLibrary([string]$ManifestPath) {
-    try {
-        $manifest = Get-Content -Raw -Path $ManifestPath | ConvertFrom-Json
-        $libraryPath = [string]$manifest.runtime.library_path
-        if ([string]::IsNullOrWhiteSpace($libraryPath)) {
-            return ""
-        }
-        if ([System.IO.Path]::IsPathRooted($libraryPath)) {
-            return [System.IO.Path]::GetFullPath($libraryPath)
-        }
-        return [System.IO.Path]::GetFullPath((Join-Path (Split-Path -Parent $ManifestPath) $libraryPath))
-    }
-    catch {
-        return ""
-    }
-}
-
-$priorRuntimeJsonExists = Test-Path Env:XR_RUNTIME_JSON
-$priorRuntimeJson = $env:XR_RUNTIME_JSON
-$selectedRuntimeManifest = $OpenXrManifest
-if ([string]::IsNullOrWhiteSpace($selectedRuntimeManifest)) {
-    $selectedRuntimeManifest = Find-VirtualDesktopOpenXrManifest
-}
-if (-not [string]::IsNullOrWhiteSpace($selectedRuntimeManifest)) {
-    $selectedRuntimeManifest = [System.IO.Path]::GetFullPath($selectedRuntimeManifest)
-    if (-not (Test-Path $selectedRuntimeManifest)) {
-        throw "Selected OpenXR runtime manifest does not exist: $selectedRuntimeManifest"
-    }
-    $env:XR_RUNTIME_JSON = $selectedRuntimeManifest
-}
+$vdxrLogCopy = Join-Path $logDir "vdxr-openxr.log"
 
 $runtimeLines = New-Object System.Collections.Generic.List[string]
 $runtimeLines.Add("Area51XR play launch: $(Get-Date -Format o)")
+$runtimeLines.Add("Host: $hostExe")
+$runtimeLines.Add("MAME: $mameExe")
+$runtimeLines.Add("Media: $mediaPath")
+
 foreach ($registryPath in @(
     "HKLM:\SOFTWARE\Khronos\OpenXR\1",
     "HKCU:\SOFTWARE\Khronos\OpenXR\1"
 )) {
-    $runtime = Get-ActiveRuntime $registryPath
-    if ([string]::IsNullOrWhiteSpace($runtime)) { $runtime = "<not set>" }
-    $runtimeLines.Add("$registryPath ActiveRuntime=$runtime")
+    try {
+        $runtime = (Get-ItemProperty -Path $registryPath -Name ActiveRuntime -ErrorAction Stop).ActiveRuntime
+        $runtimeLines.Add("$registryPath ActiveRuntime=$runtime")
+    }
+    catch {
+        $runtimeLines.Add("$registryPath ActiveRuntime=<not set>")
+    }
 }
-if (-not [string]::IsNullOrWhiteSpace($selectedRuntimeManifest)) {
-    $runtimeLines.Add("Process XR_RUNTIME_JSON=$selectedRuntimeManifest")
-    $runtimeLibrary = Resolve-RuntimeLibrary $selectedRuntimeManifest
-    if ([string]::IsNullOrWhiteSpace($runtimeLibrary)) {
-        $runtimeLines.Add("Selected runtime library=<could not resolve from manifest>")
-    }
-    else {
-        $runtimeLines.Add("Selected runtime library=$runtimeLibrary")
-        $runtimeLines.Add("Selected runtime library exists=$(Test-Path $runtimeLibrary)")
-        if (-not (Test-Path $runtimeLibrary)) {
-            throw "Virtual Desktop OpenXR manifest was found, but its runtime DLL is missing: $runtimeLibrary"
-        }
-    }
+
+$vdProcesses = @(Get-Process -ErrorAction SilentlyContinue | Where-Object {
+    $_.ProcessName -match '(?i)virtual.?desktop'
+})
+if ($vdProcesses.Count -gt 0) {
+    $runtimeLines.Add("Virtual Desktop processes: $((($vdProcesses | Select-Object -ExpandProperty ProcessName -Unique) -join ', '))")
 }
 else {
-    $runtimeLines.Add("Process XR_RUNTIME_JSON=<not set; using system ActiveRuntime>")
+    $runtimeLines.Add("Virtual Desktop processes: <none detected>")
 }
+
+function Resolve-RuntimeLibrary([string]$ManifestPath) {
+    try {
+        $json = Get-Content -Raw -Path $ManifestPath | ConvertFrom-Json
+        $library = [Environment]::ExpandEnvironmentVariables([string]$json.runtime.library_path)
+        if ([string]::IsNullOrWhiteSpace($library)) { return $null }
+        if (-not [System.IO.Path]::IsPathRooted($library)) {
+            $library = Join-Path (Split-Path -Parent $ManifestPath) $library
+        }
+        return [System.IO.Path]::GetFullPath($library)
+    }
+    catch {
+        return $null
+    }
+}
+
+$runtimeCandidates = New-Object System.Collections.Generic.List[object]
+$seenRuntimeManifests = @{}
+function Add-RuntimeCandidate([string]$Name, [string]$ManifestPath, [int]$Attempts) {
+    if ([string]::IsNullOrWhiteSpace($ManifestPath) -or -not (Test-Path $ManifestPath)) { return }
+    $full = [System.IO.Path]::GetFullPath($ManifestPath)
+    $key = $full.ToLowerInvariant()
+    if ($seenRuntimeManifests.ContainsKey($key)) { return }
+    $seenRuntimeManifests[$key] = $true
+    $library = Resolve-RuntimeLibrary $full
+    if (-not $library -or -not (Test-Path $library)) {
+        $runtimeLines.Add("Skipping $Name runtime manifest because its library is missing: $full -> $library")
+        return
+    }
+    $runtimeCandidates.Add([PSCustomObject]@{
+        Name = $Name
+        Manifest = $full
+        Library = $library
+        Attempts = $Attempts
+    })
+}
+
+$vdxrDir = "C:\Program Files\Virtual Desktop Streamer\OpenXR"
+if (Test-Path $vdxrDir) {
+    Add-RuntimeCandidate "VDXR" (Join-Path $vdxrDir "virtualdesktop-openxr.json") 3
+    Get-ChildItem -Path $vdxrDir -Filter "virtualdesktop-openxr*.json" -File -ErrorAction SilentlyContinue |
+        Where-Object { $_.Name -notmatch '(?i)-32\.json$' } |
+        ForEach-Object { Add-RuntimeCandidate "VDXR" $_.FullName 3 }
+}
+
+Add-RuntimeCandidate "SteamVR" "C:\Program Files (x86)\Steam\steamapps\common\SteamVR\steamxr_win64.json" 1
+Add-RuntimeCandidate "SteamVR" "C:\Program Files\Steam\steamapps\common\SteamVR\steamxr_win64.json" 1
+
+if ($runtimeCandidates.Count -eq 0) {
+    throw "No usable 64-bit VDXR or SteamVR OpenXR runtime manifest was found. Install/update Virtual Desktop Streamer or SteamVR."
+}
+
+$runtimeLines.Add("Runtime candidates:")
+foreach ($candidate in $runtimeCandidates) {
+    $runtimeLines.Add("  $($candidate.Name): $($candidate.Manifest)")
+    $runtimeLines.Add("    library=$($candidate.Library)")
+}
+
+$savedEnvironment = @{}
+function Set-ScopedEnvironment([string]$Name, [AllowNull()][string]$Value) {
+    if (-not $savedEnvironment.ContainsKey($Name)) {
+        $savedEnvironment[$Name] = [Environment]::GetEnvironmentVariable($Name, 'Process')
+    }
+    if ($null -eq $Value) {
+        Remove-Item "Env:$Name" -ErrorAction SilentlyContinue
+    }
+    else {
+        Set-Item "Env:$Name" $Value
+    }
+}
+
+# Keep the Area51XR process isolated from optional OpenXR tooling. Broken or stale
+# implicit layers can fail xrCreateInstance before the runtime ever sees the app.
+Set-ScopedEnvironment "XR_ENABLE_API_LAYERS" $null
+Set-ScopedEnvironment "XR_API_LAYER_PATH" $null
+Set-ScopedEnvironment "XR_LOADER_DEBUG" "warn"
+
+$implicitRoots = @(
+    "HKLM:\SOFTWARE\Khronos\OpenXR\1\ApiLayers\Implicit",
+    "HKCU:\SOFTWARE\Khronos\OpenXR\1\ApiLayers\Implicit"
+)
+foreach ($implicitRoot in $implicitRoots) {
+    if (-not (Test-Path $implicitRoot)) { continue }
+    try {
+        $key = Get-Item $implicitRoot
+        foreach ($manifestName in $key.GetValueNames()) {
+            $enabledValue = $key.GetValue($manifestName)
+            if ($enabledValue -ne 0 -or -not (Test-Path $manifestName)) { continue }
+            try {
+                $layerJson = Get-Content -Raw -Path $manifestName | ConvertFrom-Json
+                $layerName = [string]$layerJson.api_layer.name
+                $disableVariable = [string]$layerJson.api_layer.disable_environment
+                if (-not [string]::IsNullOrWhiteSpace($disableVariable)) {
+                    Set-ScopedEnvironment $disableVariable "1"
+                    $runtimeLines.Add("Disabled implicit OpenXR layer for Area51XR: $layerName ($disableVariable)")
+                }
+                else {
+                    $runtimeLines.Add("Implicit OpenXR layer has no disable variable: $layerName ($manifestName)")
+                }
+            }
+            catch {
+                $runtimeLines.Add("Could not inspect implicit OpenXR layer: $manifestName")
+            }
+        }
+    }
+    catch {
+        $runtimeLines.Add("Could not inspect implicit OpenXR layer registry: $implicitRoot")
+    }
+}
+
 $runtimeLines | Set-Content -Path $runtimeLog -Encoding UTF8
 Write-Host ($runtimeLines -join [Environment]::NewLine)
 
-function Start-Area51XrHost {
-    param([datetime]$Deadline)
-
-    $attempt = 0
-    $lastErrorText = ""
-    do {
-        $attempt++
-        Remove-Item $hostOut, $hostErr -Force -ErrorAction SilentlyContinue
-        Write-Host "Starting Area51XR OpenXR host (attempt $attempt)..."
-        $process = Start-Process -FilePath $hostExe -ArgumentList @("--xr-bridge") -PassThru `
-            -WorkingDirectory (Split-Path -Parent $hostExe) `
-            -RedirectStandardOutput $hostOut -RedirectStandardError $hostErr
-
-        $probeDeadline = (Get-Date).AddSeconds(2)
-        while ((Get-Date) -lt $probeDeadline -and -not $process.HasExited) {
-            Start-Sleep -Milliseconds 200
-            $hostText = if (Test-Path $hostOut) { Get-Content -Raw $hostOut -ErrorAction SilentlyContinue } else { "" }
-            if ($hostText -match "OpenXR bridge initialized") {
-                return $process
-            }
-        }
-
-        if (-not $process.HasExited) {
-            return $process
-        }
-
-        $lastErrorText = if (Test-Path $hostErr) { Get-Content -Raw $hostErr -ErrorAction SilentlyContinue } else { "" }
-        if ($lastErrorText -match '(?i)xrCreateInstance|no OpenXR HMD|xrGetSystem|HMD system') {
-            Write-Host "VDXR is not ready yet. Connect the Quest in Virtual Desktop; retrying..."
-        }
-        else {
-            Write-Host "OpenXR host exited during startup; retrying until the readiness timeout..."
-        }
-        Start-Sleep -Seconds 2
-    } while ((Get-Date) -lt $Deadline)
-
-    throw "Area51XR could not initialize OpenXR within $OpenXrReadyTimeoutSeconds seconds. Last error: $lastErrorText Runtime log: $runtimeLog"
+function Save-VdxrLog {
+    $source = Join-Path $env:ProgramData "Virtual Desktop\OpenXR.log"
+    if (Test-Path $source) {
+        Copy-Item $source $vdxrLogCopy -Force -ErrorAction SilentlyContinue
+    }
 }
 
 $hostProcess = $null
 $mameProcess = $null
+$selectedRuntime = $null
+$lastOpenXrError = ""
+
 try {
     Write-Host ""
-    if (-not [string]::IsNullOrWhiteSpace($selectedRuntimeManifest)) {
-        Write-Host "Using Virtual Desktop/VDXR runtime: $selectedRuntimeManifest"
-    }
-    else {
-        Write-Host "Virtual Desktop OpenXR manifest was not found; using the system OpenXR runtime."
-    }
-    Write-Host "Connect the Quest in Virtual Desktop now. The launcher will wait up to $OpenXrReadyTimeoutSeconds seconds for OpenXR."
+    Write-Host "Starting clean OpenXR runtime negotiation..."
 
-    $hostProcess = Start-Area51XrHost -Deadline (Get-Date).AddSeconds($OpenXrReadyTimeoutSeconds)
-    Write-Host "OpenXR host initialized."
+    foreach ($candidate in $runtimeCandidates) {
+        for ($attempt = 1; $attempt -le $candidate.Attempts; ++$attempt) {
+            Set-ScopedEnvironment "XR_RUNTIME_JSON" $candidate.Manifest
+            Remove-Item $hostOut, $hostErr -Force -ErrorAction SilentlyContinue
 
-    Write-Host "Starting Area 51 in patched MAME..."
+            Write-Host "Trying $($candidate.Name) OpenXR ($attempt/$($candidate.Attempts))..."
+            Write-Host "  Manifest: $($candidate.Manifest)"
+            Write-Host "  Runtime:  $($candidate.Library)"
+
+            $hostProcess = Start-Process -FilePath $hostExe -ArgumentList @("--xr-bridge") -PassThru `
+                -WorkingDirectory (Split-Path -Parent $hostExe) `
+                -RedirectStandardOutput $hostOut -RedirectStandardError $hostErr
+
+            $deadline = (Get-Date).AddSeconds(8)
+            $initialized = $false
+            while ((Get-Date) -lt $deadline) {
+                Start-Sleep -Milliseconds 250
+                if ($hostProcess.HasExited) { break }
+                $hostText = if (Test-Path $hostOut) { Get-Content -Raw $hostOut -ErrorAction SilentlyContinue } else { "" }
+                if ($hostText -match "OpenXR bridge initialized") {
+                    $initialized = $true
+                    break
+                }
+            }
+
+            if ($initialized -and -not $hostProcess.HasExited) {
+                $selectedRuntime = $candidate
+                Write-Host "$($candidate.Name) OpenXR initialized successfully."
+                break
+            }
+
+            $lastOpenXrError = if (Test-Path $hostErr) { Get-Content -Raw $hostErr -ErrorAction SilentlyContinue } else { "OpenXR host did not initialize." }
+            if ($hostProcess -and -not $hostProcess.HasExited) {
+                Stop-Process -Id $hostProcess.Id -Force -ErrorAction SilentlyContinue
+                $hostProcess.WaitForExit()
+            }
+            $hostProcess = $null
+
+            if ($candidate.Name -eq "VDXR") {
+                Save-VdxrLog
+                Write-Host "VDXR did not initialize. Retrying/falling back without launching MAME."
+                Start-Sleep -Seconds 1
+            }
+        }
+        if ($selectedRuntime) { break }
+    }
+
+    if (-not $selectedRuntime) {
+        Save-VdxrLog
+        throw "No OpenXR runtime could initialize Area51XR. Last host error: $lastOpenXrError Runtime diagnostics: $runtimeLog VDXR diagnostics: $vdxrLogCopy"
+    }
+
+    Add-Content -Path $runtimeLog -Value "Selected runtime=$($selectedRuntime.Name)"
+    Add-Content -Path $runtimeLog -Value "Selected manifest=$($selectedRuntime.Manifest)"
+    Add-Content -Path $runtimeLog -Value "Selected library=$($selectedRuntime.Library)"
+
+    Write-Host "Starting Area 51 in patched MAME only after OpenXR initialized..."
     $mameArgs = @(
         "area51",
         "-rompath", $mediaPath,
@@ -253,6 +295,7 @@ try {
 
     Write-Host ""
     Write-Host "AREA51XR PLAY MODE STARTED"
+    Write-Host "OpenXR runtime: $($selectedRuntime.Name)"
     Write-Host "Right controller: aim + trigger."
     Write-Host "Keyboard fallback: 5 = coin, 1 = Player 1 start."
     Write-Host "Leave this PowerShell window open while playing."
@@ -266,8 +309,9 @@ try {
         Start-Sleep -Milliseconds 500
 
         if ($hostProcess.HasExited) {
-            $errorText = if (Test-Path $hostErr) { Get-Content -Raw $hostErr -ErrorAction SilentlyContinue } else { "" }
-            throw "Area51XR OpenXR host exited. $errorText"
+            $errorText = if (Test-Path $hostErr) { Get-Content -Raw $hostErr } else { "" }
+            Save-VdxrLog
+            throw "Area51XR OpenXR host exited after initialization. $errorText"
         }
         if ($mameProcess.HasExited) {
             Write-Host "MAME exited with code $($mameProcess.ExitCode)."
@@ -299,11 +343,15 @@ finally {
     if ($hostProcess -and -not $hostProcess.HasExited) {
         Stop-Process -Id $hostProcess.Id -Force -ErrorAction SilentlyContinue
     }
+    Save-VdxrLog
+    foreach ($name in $savedEnvironment.Keys) {
+        $previous = $savedEnvironment[$name]
+        if ($null -eq $previous) {
+            Remove-Item "Env:$name" -ErrorAction SilentlyContinue
+        }
+        else {
+            Set-Item "Env:$name" $previous
+        }
+    }
     Remove-Item Env:A51XR_MAME_MEDIA_PATH -ErrorAction SilentlyContinue
-    if ($priorRuntimeJsonExists) {
-        $env:XR_RUNTIME_JSON = $priorRuntimeJson
-    }
-    else {
-        Remove-Item Env:XR_RUNTIME_JSON -ErrorAction SilentlyContinue
-    }
 }
