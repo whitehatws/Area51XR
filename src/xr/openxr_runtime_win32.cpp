@@ -47,6 +47,20 @@ Pose to_pose(const XrPosef& pose) {
     return out;
 }
 
+bool extension_available(
+    const std::vector<XrExtensionProperties>& properties,
+    const char* name) {
+    for (const auto& property : properties) {
+        if (std::strcmp(property.extensionName, name) == 0) {
+            return true;
+        }
+    }
+    return false;
+}
+
+constexpr const char* kTouchPlusExtension = "XR_META_touch_controller_plus";
+constexpr const char* kTouchPlusProfile = "/interaction_profiles/meta/touch_controller_plus";
+
 } // namespace
 
 struct OpenXrRuntime::Impl {
@@ -62,6 +76,8 @@ struct OpenXrRuntime::Impl {
     XrAction coin_action{XR_NULL_HANDLE};
     XrAction start_action{XR_NULL_HANDLE};
     XrPath right_hand{XR_NULL_PATH};
+    XrPath touch_profile{XR_NULL_PATH};
+    XrPath touch_plus_profile{XR_NULL_PATH};
     XrSwapchain quad_swapchain{XR_NULL_HANDLE};
     std::vector<XrSwapchainImageD3D11KHR> quad_images;
     std::uint32_t quad_width{};
@@ -70,6 +86,7 @@ struct OpenXrRuntime::Impl {
     XrTime predicted_display_time{};
     bool session_running{};
     bool frame_begun{};
+    bool touch_plus_enabled{};
     std::uint64_t sample_number{};
     ID3D11Device* device{};
     ID3D11DeviceContext* context{};
@@ -97,6 +114,7 @@ struct OpenXrRuntime::Impl {
     PFN_xrSyncActions xrSyncActions{};
     PFN_xrGetActionStateBoolean xrGetActionStateBoolean{};
     PFN_xrGetActionStatePose xrGetActionStatePose{};
+    PFN_xrGetCurrentInteractionProfile xrGetCurrentInteractionProfile{};
     PFN_xrLocateSpace xrLocateSpace{};
     PFN_xrWaitFrame xrWaitFrame{};
     PFN_xrBeginFrame xrBeginFrame{};
@@ -136,6 +154,7 @@ struct OpenXrRuntime::Impl {
             load_proc(xrGetInstanceProcAddr, instance, "xrSyncActions", xrSyncActions) &&
             load_proc(xrGetInstanceProcAddr, instance, "xrGetActionStateBoolean", xrGetActionStateBoolean) &&
             load_proc(xrGetInstanceProcAddr, instance, "xrGetActionStatePose", xrGetActionStatePose) &&
+            load_proc(xrGetInstanceProcAddr, instance, "xrGetCurrentInteractionProfile", xrGetCurrentInteractionProfile) &&
             load_proc(xrGetInstanceProcAddr, instance, "xrLocateSpace", xrLocateSpace) &&
             load_proc(xrGetInstanceProcAddr, instance, "xrWaitFrame", xrWaitFrame) &&
             load_proc(xrGetInstanceProcAddr, instance, "xrBeginFrame", xrBeginFrame) &&
@@ -203,46 +222,45 @@ struct OpenXrRuntime::Impl {
         return true;
     }
 
-    bool suggest_simple_bindings() {
-        XrPath profile{}, aim_path{}, fire_path{};
-        if (XR_FAILED(xrStringToPath(instance, "/interaction_profiles/khr/simple_controller", &profile)) ||
+    bool suggest_bindings(
+        const char* profile_path,
+        const char* fire_path,
+        bool include_cabinet_buttons,
+        XrPath& bound_profile) {
+        XrPath profile{}, aim_path{}, fire_component{};
+        if (XR_FAILED(xrStringToPath(instance, profile_path, &profile)) ||
             XR_FAILED(xrStringToPath(instance, "/user/hand/right/input/aim/pose", &aim_path)) ||
-            XR_FAILED(xrStringToPath(instance, "/user/hand/right/input/select/click", &fire_path))) {
+            XR_FAILED(xrStringToPath(instance, fire_path, &fire_component))) {
             return false;
         }
 
-        const std::array<XrActionSuggestedBinding, 2> bindings{{
-            {aim_action, aim_path},
-            {fire_action, fire_path}
-        }};
+        std::vector<XrActionSuggestedBinding> bindings;
+        bindings.reserve(include_cabinet_buttons ? 4 : 2);
+        bindings.push_back({aim_action, aim_path});
+        bindings.push_back({fire_action, fire_component});
+
+        if (include_cabinet_buttons) {
+            XrPath start_path{}, coin_path{};
+            if (XR_FAILED(xrStringToPath(instance, "/user/hand/right/input/a/click", &start_path)) ||
+                XR_FAILED(xrStringToPath(instance, "/user/hand/right/input/b/click", &coin_path))) {
+                return false;
+            }
+            bindings.push_back({start_action, start_path});
+            bindings.push_back({coin_action, coin_path});
+        }
+
         XrInteractionProfileSuggestedBinding suggested{XR_TYPE_INTERACTION_PROFILE_SUGGESTED_BINDING};
         suggested.interactionProfile = profile;
         suggested.countSuggestedBindings = static_cast<std::uint32_t>(bindings.size());
         suggested.suggestedBindings = bindings.data();
-        return XR_SUCCEEDED(xrSuggestInteractionProfileBindings(instance, &suggested));
-    }
-
-    bool suggest_touch_bindings() {
-        XrPath profile{}, aim_path{}, fire_path{}, start_path{}, coin_path{};
-        if (XR_FAILED(xrStringToPath(instance, "/interaction_profiles/oculus/touch_controller", &profile)) ||
-            XR_FAILED(xrStringToPath(instance, "/user/hand/right/input/aim/pose", &aim_path)) ||
-            XR_FAILED(xrStringToPath(instance, "/user/hand/right/input/trigger/value", &fire_path)) ||
-            XR_FAILED(xrStringToPath(instance, "/user/hand/right/input/a/click", &start_path)) ||
-            XR_FAILED(xrStringToPath(instance, "/user/hand/right/input/b/click", &coin_path))) {
+        if (XR_FAILED(xrSuggestInteractionProfileBindings(instance, &suggested))) {
             return false;
         }
 
-        const std::array<XrActionSuggestedBinding, 4> bindings{{
-            {aim_action, aim_path},
-            {fire_action, fire_path},
-            {start_action, start_path},
-            {coin_action, coin_path}
-        }};
-        XrInteractionProfileSuggestedBinding suggested{XR_TYPE_INTERACTION_PROFILE_SUGGESTED_BINDING};
-        suggested.interactionProfile = profile;
-        suggested.countSuggestedBindings = static_cast<std::uint32_t>(bindings.size());
-        suggested.suggestedBindings = bindings.data();
-        return XR_SUCCEEDED(xrSuggestInteractionProfileBindings(instance, &suggested));
+        if (include_cabinet_buttons) {
+            bound_profile = profile;
+        }
+        return true;
     }
 
     bool create_boolean_action(const char* name, const char* localized_name, XrAction& action) {
@@ -287,11 +305,58 @@ struct OpenXrRuntime::Impl {
             return fail("start action creation failed");
         }
 
-        const bool simple_ok = suggest_simple_bindings();
-        const bool touch_ok = suggest_touch_bindings();
-        if (!simple_ok && !touch_ok) {
+        XrPath ignored_profile{XR_NULL_PATH};
+        const bool simple_ok = suggest_bindings(
+            "/interaction_profiles/khr/simple_controller",
+            "/user/hand/right/input/select/click",
+            false,
+            ignored_profile);
+        const bool touch_ok = suggest_bindings(
+            "/interaction_profiles/oculus/touch_controller",
+            "/user/hand/right/input/trigger/value",
+            true,
+            touch_profile);
+        const bool touch_plus_ok = touch_plus_enabled && suggest_bindings(
+            kTouchPlusProfile,
+            "/user/hand/right/input/trigger/value",
+            true,
+            touch_plus_profile);
+
+        if (!simple_ok && !touch_ok && !touch_plus_ok) {
             return fail("no supported controller bindings could be suggested");
         }
+        return true;
+    }
+
+    bool active_profile_has_cabinet_buttons() const {
+        if (!xrGetCurrentInteractionProfile || !session || !right_hand) {
+            return false;
+        }
+
+        XrInteractionProfileState profile{XR_TYPE_INTERACTION_PROFILE_STATE};
+        if (XR_FAILED(xrGetCurrentInteractionProfile(session, right_hand, &profile))) {
+            return false;
+        }
+
+        return
+            (touch_profile != XR_NULL_PATH && profile.interactionProfile == touch_profile) ||
+            (touch_plus_profile != XR_NULL_PATH && profile.interactionProfile == touch_plus_profile);
+    }
+
+    bool read_boolean_action(XrAction action, bool& down) {
+        down = false;
+        if (!action) {
+            return true;
+        }
+
+        XrActionStateGetInfo get{XR_TYPE_ACTION_STATE_GET_INFO};
+        get.action = action;
+        get.subactionPath = right_hand;
+        XrActionStateBoolean state{XR_TYPE_ACTION_STATE_BOOLEAN};
+        if (XR_FAILED(xrGetActionStateBoolean(session, &get, &state))) {
+            return false;
+        }
+        down = state.isActive && state.currentState == XR_TRUE;
         return true;
     }
 
@@ -388,18 +453,6 @@ struct OpenXrRuntime::Impl {
         }
         return true;
     }
-
-    bool read_boolean_action(XrAction action, bool& down) {
-        XrActionStateGetInfo get{XR_TYPE_ACTION_STATE_GET_INFO};
-        get.action = action;
-        get.subactionPath = right_hand;
-        XrActionStateBoolean state{XR_TYPE_ACTION_STATE_BOOLEAN};
-        if (XR_FAILED(xrGetActionStateBoolean(session, &get, &state))) {
-            return false;
-        }
-        down = state.isActive && state.currentState == XR_TRUE;
-        return true;
-    }
 };
 
 OpenXrRuntime::OpenXrRuntime() : impl_(std::make_unique<Impl>()) {}
@@ -420,15 +473,48 @@ bool OpenXrRuntime::initialize() {
         return p.fail("OpenXR loader entry points unavailable");
     }
 
-    const char* extensions[] = {XR_KHR_D3D11_ENABLE_EXTENSION_NAME};
+    PFN_xrEnumerateInstanceExtensionProperties enumerate_extensions{};
+    if (!load_proc(
+            p.xrGetInstanceProcAddr,
+            XR_NULL_HANDLE,
+            "xrEnumerateInstanceExtensionProperties",
+            enumerate_extensions)) {
+        return p.fail("xrEnumerateInstanceExtensionProperties unavailable");
+    }
+
+    std::uint32_t extension_count{};
+    if (XR_FAILED(enumerate_extensions(nullptr, 0, &extension_count, nullptr))) {
+        return p.fail("OpenXR extension enumeration failed");
+    }
+    std::vector<XrExtensionProperties> available_extensions(extension_count);
+    for (auto& extension : available_extensions) {
+        extension.type = XR_TYPE_EXTENSION_PROPERTIES;
+        extension.next = nullptr;
+    }
+    if (extension_count != 0 && XR_FAILED(enumerate_extensions(
+            nullptr,
+            extension_count,
+            &extension_count,
+            available_extensions.data()))) {
+        return p.fail("OpenXR extension enumeration failed");
+    }
+
+    p.touch_plus_enabled = extension_available(available_extensions, kTouchPlusExtension);
+
+    std::vector<const char*> extensions;
+    extensions.push_back(XR_KHR_D3D11_ENABLE_EXTENSION_NAME);
+    if (p.touch_plus_enabled) {
+        extensions.push_back(kTouchPlusExtension);
+    }
+
     XrInstanceCreateInfo instance_info{XR_TYPE_INSTANCE_CREATE_INFO};
     std::strncpy(instance_info.applicationInfo.applicationName, "Area51XR", XR_MAX_APPLICATION_NAME_SIZE - 1);
     instance_info.applicationInfo.applicationVersion = 2;
     std::strncpy(instance_info.applicationInfo.engineName, "Area51XR", XR_MAX_ENGINE_NAME_SIZE - 1);
     instance_info.applicationInfo.engineVersion = 2;
     instance_info.applicationInfo.apiVersion = XR_API_VERSION_1_0;
-    instance_info.enabledExtensionCount = 1;
-    instance_info.enabledExtensionNames = extensions;
+    instance_info.enabledExtensionCount = static_cast<std::uint32_t>(extensions.size());
+    instance_info.enabledExtensionNames = extensions.data();
     if (XR_FAILED(p.xrCreateInstance(&instance_info, &p.instance))) {
         return p.fail("xrCreateInstance failed");
     }
@@ -541,11 +627,16 @@ bool OpenXrRuntime::poll(XrInputState& state) {
     if (!p.read_boolean_action(p.fire_action, state.trigger_down)) {
         return p.fail("fire action state unavailable");
     }
-    if (!p.read_boolean_action(p.coin_action, state.coin_down)) {
-        return p.fail("coin action state unavailable");
-    }
-    if (!p.read_boolean_action(p.start_action, state.start_down)) {
-        return p.fail("start action state unavailable");
+
+    state.coin_down = false;
+    state.start_down = false;
+    if (p.active_profile_has_cabinet_buttons()) {
+        if (!p.read_boolean_action(p.coin_action, state.coin_down)) {
+            return p.fail("coin action state unavailable");
+        }
+        if (!p.read_boolean_action(p.start_action, state.start_down)) {
+            return p.fail("start action state unavailable");
+        }
     }
     return true;
 }
