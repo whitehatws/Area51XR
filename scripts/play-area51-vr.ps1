@@ -167,8 +167,8 @@ function Set-ScopedEnvironment([string]$Name, [AllowNull()][string]$Value) {
     }
 }
 
-# Keep the Area51XR process isolated from optional OpenXR tooling. Broken or stale
-# implicit layers can fail xrCreateInstance before the runtime ever sees the app.
+# Remove externally forced layer overrides, but preserve Virtual Desktop's own
+# implicit compatibility layer. Disable only unrelated third-party implicit layers.
 Set-ScopedEnvironment "XR_ENABLE_API_LAYERS" $null
 Set-ScopedEnvironment "XR_API_LAYER_PATH" $null
 Set-ScopedEnvironment "XR_LOADER_DEBUG" "warn"
@@ -188,12 +188,16 @@ foreach ($implicitRoot in $implicitRoots) {
                 $layerJson = Get-Content -Raw -Path $manifestName | ConvertFrom-Json
                 $layerName = [string]$layerJson.api_layer.name
                 $disableVariable = [string]$layerJson.api_layer.disable_environment
+                if ($layerName -match '(?i)virtual.?desktop' -or $manifestName -match '(?i)virtual.?desktop') {
+                    $runtimeLines.Add("Preserved Virtual Desktop implicit OpenXR layer: $layerName")
+                    continue
+                }
                 if (-not [string]::IsNullOrWhiteSpace($disableVariable)) {
                     Set-ScopedEnvironment $disableVariable "1"
-                    $runtimeLines.Add("Disabled implicit OpenXR layer for Area51XR: $layerName ($disableVariable)")
+                    $runtimeLines.Add("Disabled third-party implicit OpenXR layer for Area51XR: $layerName ($disableVariable)")
                 }
                 else {
-                    $runtimeLines.Add("Implicit OpenXR layer has no disable variable: $layerName ($manifestName)")
+                    $runtimeLines.Add("Third-party implicit OpenXR layer has no disable variable: $layerName ($manifestName)")
                 }
             }
             catch {
@@ -213,6 +217,15 @@ function Save-VdxrLog {
     $source = Join-Path $env:ProgramData "Virtual Desktop\OpenXR.log"
     if (Test-Path $source) {
         Copy-Item $source $vdxrLogCopy -Force -ErrorAction SilentlyContinue
+    }
+}
+
+function Show-VdxrLogTail {
+    Save-VdxrLog
+    if (Test-Path $vdxrLogCopy) {
+        Write-Host ""
+        Write-Host "VDXR runtime log tail:"
+        Get-Content -Path $vdxrLogCopy -Tail 80 -ErrorAction SilentlyContinue | Write-Host
     }
 }
 
@@ -273,7 +286,7 @@ try {
     }
 
     if (-not $selectedRuntime) {
-        Save-VdxrLog
+        Show-VdxrLogTail
         throw "No OpenXR runtime could initialize Area51XR. Last host error: $lastOpenXrError Runtime diagnostics: $runtimeLog VDXR diagnostics: $vdxrLogCopy"
     }
 
