@@ -14,7 +14,8 @@ $bash = Join-Path $MsysRoot "usr\bin\bash.exe"
 $ucrtBin = Join-Path $MsysRoot "ucrt64\bin"
 $openXrSdk = Join-Path $MsysRoot "ucrt64"
 $onnxRuntimeDir = Join-Path $root "external\onnxruntime-1.28.0"
-$buildScript = Join-Path $PSScriptRoot "build-mame-area51xr.sh"
+$hostBuildScript = Join-Path $PSScriptRoot "build-area51xr-host.sh"
+$mameBuildScript = Join-Path $PSScriptRoot "build-mame-area51xr.sh"
 $preflight = Join-Path $PSScriptRoot "preflight-area51-media.ps1"
 
 function ConvertTo-MsysPath([string]$Path) {
@@ -27,7 +28,7 @@ function ConvertTo-MsysPath([string]$Path) {
     return ($full -replace '\\', '/')
 }
 
-foreach ($required in @($RomPath, $MameRoot, $bash, $ucrtBin, $buildScript, $preflight)) {
+foreach ($required in @($RomPath, $MameRoot, $bash, $ucrtBin, $hostBuildScript, $mameBuildScript, $preflight)) {
     if (-not (Test-Path $required)) {
         throw "Required play-build path not found: $required"
     }
@@ -43,8 +44,7 @@ $env:A51XR_ONNXRUNTIME_DIR_MSYS = ConvertTo-MsysPath $onnxRuntimeDir
 $env:A51XR_MAME_JOBS = [string][Math]::Max(2, [Math]::Min(8, [Environment]::ProcessorCount))
 
 Write-Host "[2/4] Incrementally building Area51XR host..."
-$hostBuild = 'export PATH=/ucrt64/bin:/usr/bin:$PATH; cmake -S "$A51XR_ROOT_MSYS" -B "$A51XR_ROOT_MSYS/build-mingw" -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo -DA51XR_OPENXR_SDK="$A51XR_OPENXR_SDK_MSYS" -DA51XR_ONNXRUNTIME_DIR="$A51XR_ONNXRUNTIME_DIR_MSYS" && cmake --build "$A51XR_ROOT_MSYS/build-mingw" --parallel'
-& $bash -lc $hostBuild
+& $bash (ConvertTo-MsysPath $hostBuildScript)
 if ($LASTEXITCODE -ne 0) {
     throw "Area51XR host build failed with exit code $LASTEXITCODE."
 }
@@ -57,8 +57,7 @@ if (-not (Test-Path $packagedLoader)) {
 Copy-Item $packagedLoader $loaderDll -Force
 
 Write-Host "[3/4] Incrementally building patched MAME..."
-$buildScriptMsys = ConvertTo-MsysPath $buildScript
-& $bash $buildScriptMsys
+& $bash (ConvertTo-MsysPath $mameBuildScript)
 if ($LASTEXITCODE -ne 0) {
     throw "MAME play build failed with exit code $LASTEXITCODE."
 }
