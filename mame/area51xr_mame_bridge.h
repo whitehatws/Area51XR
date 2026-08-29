@@ -1,3 +1,4 @@
+// license:GPL-2.0+
 #pragma once
 
 #ifdef _WIN32
