@@ -383,7 +383,7 @@ bool OpenXrRuntime::initialize() {
     instance_info.applicationInfo.applicationVersion = 2;
     std::strncpy(instance_info.applicationInfo.engineName, "Area51XR", XR_MAX_ENGINE_NAME_SIZE - 1);
     instance_info.applicationInfo.engineVersion = 2;
-    instance_info.applicationInfo.apiVersion = XR_CURRENT_API_VERSION;
+    instance_info.applicationInfo.apiVersion = XR_API_VERSION_1_0;
     instance_info.enabledExtensionCount = 1;
     instance_info.enabledExtensionNames = extensions;
     if (XR_FAILED(p.xrCreateInstance(&instance_info, &p.instance))) {
