@@ -1,26 +1,81 @@
 # Area51XR
 
-Area51XR is an experimental VR compatibility layer for the 1995 *Area 51* arcade game. The goal is to preserve the original game logic and light-gun behavior while adapting presentation and input for modern OpenXR headsets.
+Area51XR is a Windows PCVR compatibility layer for the 1995 *Area 51* arcade game. It preserves the original game logic and light-gun behavior while presenting the game through OpenXR and mapping a tracked right-hand VR controller to the Player 1 gun.
 
-The project is in early development. The current code establishes the build, test, and diagnostic path needed before emulator and OpenXR integration begins.
+## Current playable milestone
 
-## Build
+The current pre-release build has been hardware-tested on Meta Quest 3 with Virtual Desktop / VDXR and supports the full Player 1 game loop:
 
-Windows development uses CMake and Visual Studio Build Tools 2022 or Visual Studio 2022.
+- original Area 51 gameplay running in the patched arcade emulator component
+- OpenXR VR screen presentation
+- tracked right-controller light-gun aiming
+- trigger to fire
+- authentic off-screen reload by aiming outside the game screen and firing
+- Quest B to insert Coin 1
+- Quest A to Start / Continue
+- keyboard fallback: `5` for Coin 1 and `1` for Player 1 Start
+- MAME low-latency mode and fresher-frame sampling for reduced input/display latency
+- persistent play launcher and diagnostics
+
+The v1.0 launch target is the stable flat-screen VR/light-gun experience above. Experimental depth reconstruction and spatial mesh work remains outside the v1.0 launch gate.
+
+## OpenXR runtime strategy
+
+Area51XR does not require a specific paid PCVR transport. Runtime selection is process-scoped and supports:
+
+- the currently active Windows OpenXR runtime
+- Meta Horizon Link / Air Link
+- SteamVR, including Quest use through Steam Link
+- Virtual Desktop / VDXR
+
+VDXR is the current hardware-tested runtime. Meta Horizon Link and SteamVR support are being validated as free v1.0 connection paths.
+
+## Development play command
+
+Windows development currently uses MSYS2 UCRT64, CMake/Ninja, a targeted patched emulator build, the Khronos OpenXR loader, and optional ONNX Runtime tooling for non-launch reconstruction experiments.
 
 ```powershell
-./scripts/build.ps1
-./scripts/test.ps1
+powershell -ExecutionPolicy Bypass -File scripts\play-area51-vr.ps1 `
+    -RomPath "D:\MAME\roms"
 ```
 
-The diagnostic host can also exercise projection code without a headset:
+Optional runtime override:
 
 ```powershell
-./scripts/launch.ps1 --simulate-gun 0.5 0.5
+powershell -ExecutionPolicy Bypass -File scripts\play-area51-vr.ps1 `
+    -RomPath "D:\MAME\roms" `
+    -Runtime MetaLink
 ```
+
+Valid runtime overrides are `Auto`, `Active`, `VDXR`, `MetaLink`, and `SteamVR`.
+
+## Public release packaging
+
+The repository contains a standalone release launcher under `release/` and a packaging pipeline:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\package-release.ps1 `
+    -Version "1.0.0-rc1"
+```
+
+The packaging pipeline produces:
+
+- `Area51XR-<version>-win64.zip`
+- `Area51XR-<version>-mame-source.zip`
+
+The player package is designed to run without a source checkout, CMake, or MSYS2 installed on the player's machine. The source package provides the full corresponding source for the modified GPL emulator component.
+
+The packaging pipeline has a hard guard that refuses to create the player ZIP if it finds the Area 51 CHD, ROM archive, or known loose ROM filenames in the release stage.
+
+## Game media
+
+No ROMs, CHDs, original game executables, or copyrighted Area 51 game assets are distributed by this project.
+
+Players must provide game media they are legally entitled to use. The public launcher verifies the media with the bundled emulator component before starting VR.
 
 ## Project rules
 
-- No ROMs, CHDs, game executables, or copyrighted game assets are distributed here.
-- Game-specific files stay on the user's machine.
-- Open-source dependencies and borrowed code must retain their original licenses and attribution.
+- Never distribute Area 51 ROMs, CHDs, or original copyrighted game assets.
+- Keep the public Area51XR product identity separate from MAME branding and trademarks.
+- Preserve licenses and attribution for all open-source dependencies and modified components.
+- Do not claim experimental depth/mesh reconstruction is part of v1.0 until it is actually implemented and hardware-validated.
