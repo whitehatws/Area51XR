@@ -14,6 +14,7 @@ $bash = Join-Path $MsysRoot "usr\bin\bash.exe"
 $ucrtBin = Join-Path $MsysRoot "ucrt64\bin"
 $openXrSdk = Join-Path $MsysRoot "ucrt64"
 $onnxRuntimeDir = Join-Path $root "external\onnxruntime-1.28.0"
+$onnxRuntimeBin = Join-Path $onnxRuntimeDir "runtimes\win-x64\native"
 $hostBuildScript = Join-Path $PSScriptRoot "build-area51xr-host.sh"
 $mameBuildScript = Join-Path $PSScriptRoot "build-mame-area51xr.sh"
 $preflight = Join-Path $PSScriptRoot "preflight-area51-media.ps1"
@@ -30,7 +31,7 @@ function ConvertTo-MsysPath([string]$Path) {
     return ($full -replace '\\', '/')
 }
 
-foreach ($required in @($RomPath, $MameRoot, $bash, $ucrtBin, $hostBuildScript, $mameBuildScript, $preflight, $controlsPatch)) {
+foreach ($required in @($RomPath, $MameRoot, $bash, $ucrtBin, $onnxRuntimeBin, $hostBuildScript, $mameBuildScript, $preflight, $controlsPatch)) {
     if (-not (Test-Path $required)) {
         throw "Required play-build path not found: $required"
     }
@@ -46,6 +47,21 @@ $env:A51XR_OPENXR_SDK_MSYS = ConvertTo-MsysPath $openXrSdk
 $env:A51XR_ONNXRUNTIME_DIR_MSYS = ConvertTo-MsysPath $onnxRuntimeDir
 $env:A51XR_MAME_JOBS = [string][Math]::Max(2, [Math]::Min(8, [Environment]::ProcessorCount))
 
+# Native executables produced by the UCRT64 toolchain require the MinGW runtime
+# DLLs to be visible to the Windows loader. Keep ONNX Runtime visible as well so
+# the regression gate uses the same native environment as the full smoke test.
+$runtimePaths = @($ucrtBin, $onnxRuntimeBin)
+$currentPathParts = @($env:PATH -split ';')
+foreach ($runtimePath in [array]::Reverse([object[]]$runtimePaths.Clone())) {
+    # This loop body is intentionally empty; [array]::Reverse mutates in place.
+}
+foreach ($runtimePath in $runtimePaths) {
+    if (-not ($currentPathParts -contains $runtimePath)) {
+        $env:PATH = "$runtimePath;$env:PATH"
+        $currentPathParts = @($env:PATH -split ';')
+    }
+}
+
 Write-Host "[2/5] Incrementally building Area51XR host..."
 & $bash (ConvertTo-MsysPath $hostBuildScript)
 if ($LASTEXITCODE -ne 0) {
@@ -57,8 +73,12 @@ if (-not (Test-Path $regressions)) {
 }
 Write-Host "[3/5] Running Area51XR regression gate..."
 & $regressions
-if ($LASTEXITCODE -ne 0) {
-    throw "Area51XR regressions failed with exit code $LASTEXITCODE."
+$regressionExit = $LASTEXITCODE
+if ($regressionExit -ne 0) {
+    if ($regressionExit -eq -1073741515) {
+        throw "Area51XR regression runner could not start because Windows could not load a required DLL (0xC0000135). UCRT64=$ucrtBin ONNX=$onnxRuntimeBin"
+    }
+    throw "Area51XR regressions failed with exit code $regressionExit."
 }
 
 $packagedLoader = Join-Path $ucrtBin "libopenxr_loader.dll"
