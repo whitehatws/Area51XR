@@ -18,6 +18,7 @@ $hostBuildScript = Join-Path $PSScriptRoot "build-area51xr-host.sh"
 $mameBuildScript = Join-Path $PSScriptRoot "build-mame-area51xr.sh"
 $preflight = Join-Path $PSScriptRoot "preflight-area51-media.ps1"
 $controlsPatch = Join-Path $PSScriptRoot "apply-mame-controls-patch.ps1"
+$regressions = Join-Path $root "build-mingw\area51xr_tests.exe"
 
 function ConvertTo-MsysPath([string]$Path) {
     $full = [System.IO.Path]::GetFullPath($Path)
@@ -35,7 +36,7 @@ foreach ($required in @($RomPath, $MameRoot, $bash, $ucrtBin, $hostBuildScript, 
     }
 }
 
-Write-Host "[1/4] Applying current Area51XR MAME patches..."
+Write-Host "[1/5] Applying current Area51XR MAME patches..."
 & (Join-Path $PSScriptRoot "apply-mame-patch.ps1") -MameRoot $MameRoot
 & $controlsPatch -MameRoot $MameRoot
 
@@ -45,10 +46,19 @@ $env:A51XR_OPENXR_SDK_MSYS = ConvertTo-MsysPath $openXrSdk
 $env:A51XR_ONNXRUNTIME_DIR_MSYS = ConvertTo-MsysPath $onnxRuntimeDir
 $env:A51XR_MAME_JOBS = [string][Math]::Max(2, [Math]::Min(8, [Environment]::ProcessorCount))
 
-Write-Host "[2/4] Incrementally building Area51XR host..."
+Write-Host "[2/5] Incrementally building Area51XR host..."
 & $bash (ConvertTo-MsysPath $hostBuildScript)
 if ($LASTEXITCODE -ne 0) {
     throw "Area51XR host build failed with exit code $LASTEXITCODE."
+}
+
+if (-not (Test-Path $regressions)) {
+    throw "Area51XR regression runner not found after build: $regressions"
+}
+Write-Host "[3/5] Running Area51XR regression gate..."
+& $regressions
+if ($LASTEXITCODE -ne 0) {
+    throw "Area51XR regressions failed with exit code $LASTEXITCODE."
 }
 
 $packagedLoader = Join-Path $ucrtBin "libopenxr_loader.dll"
@@ -58,13 +68,13 @@ if (-not (Test-Path $packagedLoader)) {
 }
 Copy-Item $packagedLoader $loaderDll -Force
 
-Write-Host "[3/4] Incrementally building patched MAME..."
+Write-Host "[4/5] Incrementally building patched MAME..."
 & $bash (ConvertTo-MsysPath $mameBuildScript)
 if ($LASTEXITCODE -ne 0) {
     throw "MAME play build failed with exit code $LASTEXITCODE."
 }
 
-Write-Host "[4/4] Verifying Area 51 media..."
+Write-Host "[5/5] Verifying Area 51 media..."
 & $preflight -RomPath $RomPath -MameRoot $MameRoot
 if ($LASTEXITCODE -ne 0) {
     throw "Area 51 media preflight failed with exit code $LASTEXITCODE."
