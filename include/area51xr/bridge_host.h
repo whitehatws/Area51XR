@@ -11,7 +11,9 @@ void write_gun_state(
     float aim_x,
     float aim_y,
     bool trigger,
-    bool offscreen = false) noexcept;
+    bool offscreen = false,
+    bool coin = false,
+    bool start = false) noexcept;
 
 struct FrameStatus {
     std::uint64_t frame_number{};
