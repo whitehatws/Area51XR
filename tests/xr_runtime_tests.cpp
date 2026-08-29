@@ -30,6 +30,9 @@ int main() {
     area51xr::XrInputState initial{};
     initial.session_running = true;
     initial.pose_valid = true;
+    initial.trigger_down = true;
+    initial.coin_down = true;
+    initial.start_down = true;
     initial.sample_number = 7;
     area51xr::SimulatedXrRuntime runtime(initial);
     assert(runtime.initialize());
@@ -39,6 +42,9 @@ int main() {
     assert(sampled.sample_number == 7);
     assert(sampled.session_running);
     assert(sampled.pose_valid);
+    assert(sampled.trigger_down);
+    assert(sampled.coin_down);
+    assert(sampled.start_down);
 
     const std::array<area51xr::SpatialMeshVertexView, 3> vertices{{
         {{0.0f, 0.0f, -1.0f}, 0.0f, 0.0f},
