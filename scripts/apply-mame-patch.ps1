@@ -77,10 +77,16 @@ $screenOriginal = @'
 	copybitmap(bitmap, m_screen_bitmap, 0, 0, 0, 0, cliprect);
 	return 0;
 '@.Replace("`r`n", "`n")
-$screenPatched = @'
+$screenPatchedOld = @'
 	/* render the object list */
 	copybitmap(bitmap, m_screen_bitmap, 0, 0, 0, 0, cliprect);
 	area51xr_mame::publish_bitmap(bitmap, cliprect);
+	return 0;
+'@.Replace("`r`n", "`n")
+$screenPatched = @'
+	/* render the object list */
+	copybitmap(bitmap, m_screen_bitmap, 0, 0, 0, 0, cliprect);
+	area51xr_mame::publish_bitmap(bitmap, m_screen->visible_area());
 	return 0;
 '@.Replace("`r`n", "`n")
 
@@ -107,7 +113,15 @@ if ($Revert) {
 
     $text = Replace-Required $text $includePatched $includeOriginal "Area51XR include"
     $text = Replace-Required $text $gunPatched $gunOriginal "Area51XR gun hook"
-    $text = Replace-Required $text $screenPatched $screenOriginal "Area51XR frame hook"
+    if ($text.Contains($screenPatched)) {
+        $text = Replace-Required $text $screenPatched $screenOriginal "Area51XR frame hook"
+    }
+    elseif ($text.Contains($screenPatchedOld)) {
+        $text = Replace-Required $text $screenPatchedOld $screenOriginal "Area51XR legacy frame hook"
+    }
+    else {
+        throw "Could not find expected MAME source block: Area51XR frame hook. The MAME source may have changed."
+    }
     Write-PreservedNewlines $text
     Remove-Item $targetBridge -ErrorAction SilentlyContinue
     Write-Host "Area51XR MAME integration reverted."
@@ -117,6 +131,14 @@ if ($Revert) {
 if ($text.Contains($includePatched) -and $text.Contains($gunPatched) -and $text.Contains($screenPatched)) {
     Copy-Item $bridge $targetBridge -Force
     Write-Host "Area51XR MAME integration is already applied."
+    exit 0
+}
+
+if ($text.Contains($includePatched) -and $text.Contains($gunPatched) -and $text.Contains($screenPatchedOld)) {
+    $text = Replace-Required $text $screenPatchedOld $screenPatched "Area51XR legacy frame hook"
+    Copy-Item $bridge $targetBridge -Force
+    Write-PreservedNewlines $text
+    Write-Host "Area51XR MAME integration upgraded."
     exit 0
 }
 
