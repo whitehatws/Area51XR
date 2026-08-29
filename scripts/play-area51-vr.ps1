@@ -14,7 +14,7 @@ if ([string]::IsNullOrWhiteSpace($MameRoot)) {
 $hostExe = Join-Path $root "build-mingw\area51xr.exe"
 $ucrtBin = Join-Path $MsysRoot "ucrt64\bin"
 $resolver = Join-Path $PSScriptRoot "resolve-mame-media.ps1"
-$smoke = Join-Path $PSScriptRoot "smoke-test.ps1"
+$preparePlay = Join-Path $PSScriptRoot "prepare-play-build.ps1"
 
 if (-not (Test-Path $RomPath)) {
     throw "ROM path not found: $RomPath"
@@ -25,10 +25,13 @@ if (-not (Test-Path $MameRoot)) {
 if (-not (Test-Path $resolver)) {
     throw "Media resolver not found: $resolver"
 }
+if (-not (Test-Path $preparePlay)) {
+    throw "Play-build preparation script not found: $preparePlay"
+}
 
 if (-not $SkipBuild) {
-    Write-Host "Preparing current Area51XR + patched MAME build..."
-    & $smoke -MameRoot $MameRoot -MsysRoot $MsysRoot -RomPath $RomPath
+    Write-Host "Preparing focused Area51XR VR play build..."
+    & $preparePlay -MameRoot $MameRoot -MsysRoot $MsysRoot -RomPath $RomPath
 }
 
 if (-not (Test-Path $hostExe)) {
@@ -119,6 +122,7 @@ try {
     Write-Host "AREA51XR PLAY MODE STARTED"
     Write-Host "Put on the Quest 3 and keep Virtual Desktop / VDXR connected."
     Write-Host "Right controller: aim + trigger."
+    Write-Host "Keyboard fallback: 5 = coin, 1 = Player 1 start."
     Write-Host "Leave this PowerShell window open while playing."
     Write-Host "Press Ctrl+C here, or exit MAME, to stop the session."
     Write-Host "Logs: $logDir"
