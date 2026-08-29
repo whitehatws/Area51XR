@@ -37,6 +37,7 @@ int main() {
     assert(first.runtime_ok);
     assert(first.session_running);
     assert(first.aim_valid);
+    assert(!first.offscreen);
     assert(near(first.aim.x, 0.5f));
     assert(near(first.aim.y, 0.5f));
     assert(first.trigger_down);
@@ -44,6 +45,22 @@ int main() {
     assert(first.frame_presented);
     assert(runtime.last_presented_frame() == 12);
     assert(shared->gun.trigger == 1);
+    assert(shared->gun.offscreen == 0);
+    assert(near(shared->gun.aim_x, 0.5f));
+    assert(near(shared->gun.aim_y, 0.5f));
+
+    // A tracked ray that misses the game plane is a real off-screen gun state.
+    // Pulling the trigger here is how Area 51 performs its cabinet reload.
+    input.aim.position = {2.0f, 0.0f, 0.0f};
+    input.pose_valid = true;
+    input.trigger_down = true;
+    runtime.set_state(input);
+    const auto offscreen = host.tick();
+    assert(!offscreen.aim_valid);
+    assert(offscreen.offscreen);
+    assert(offscreen.trigger_down);
+    assert(shared->gun.trigger == 1);
+    assert(shared->gun.offscreen == 1);
     assert(near(shared->gun.aim_x, 0.5f));
     assert(near(shared->gun.aim_y, 0.5f));
 
@@ -52,9 +69,11 @@ int main() {
     runtime.set_state(input);
     const auto invalid = host.tick();
     assert(!invalid.aim_valid);
+    assert(!invalid.offscreen);
     assert(invalid.frame_presented);
     assert(runtime.last_presented_frame() == 12);
     assert(shared->gun.trigger == 0);
+    assert(shared->gun.offscreen == 0);
     assert(near(shared->gun.aim_x, 0.5f));
     assert(near(shared->gun.aim_y, 0.5f));
 
