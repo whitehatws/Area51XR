@@ -16,17 +16,25 @@ $raw = Get-Content -Raw -Path $jaguarMain
 $newline = if ($raw.Contains("`r`n")) { "`r`n" } else { "`n" }
 $text = $raw.Replace("`r`n", "`n")
 
-$includeOriginal = @'
+# The bridge header uses Win32 shared-memory APIs. It must be included only
+# after MAME's CPU/device headers have been parsed; otherwise Windows macros
+# such as ERROR and EXCEPTION_ILLEGAL_INSTRUCTION collide with MAME symbols.
+$legacyIncludeOriginal = @'
 #include "jaguar.h"
 
 #include "bus/ata/hdd.h"
 '@.Replace("`r`n", "`n")
-$includePatched = @'
+$legacyIncludePatched = @'
 #include "jaguar.h"
 #include "area51xr_mame_bridge.h"
 
 #include "bus/ata/hdd.h"
 '@.Replace("`r`n", "`n")
+$safeIncludeOriginal = '#include "cdrom.h"'
+$safeIncludePatched = @'
+#include "cdrom.h"
+#include "area51xr_mame_bridge.h"
+'@.Replace("`r`n", "`n").TrimEnd("`n")
 
 $gpioOriginal = @'
 	map(0x04f17000, 0x04f17003).lr16(NAME([this] () { return uint16_t(m_system->read()); })); // GPIO3
@@ -54,28 +62,45 @@ function Write-PreservedNewlines([string]$Content) {
 }
 
 if ($Revert) {
-    if ($text.Contains($gpioOriginal) -and $text.Contains($includeOriginal)) {
-        Write-Host "Area51XR cabinet-control integration is already reverted."
-        exit 0
+    if ($text.Contains($gpioPatched)) {
+        $text = Replace-Required $text $gpioPatched $gpioOriginal "Area51XR R3000 cabinet GPIO hook"
     }
-    $text = Replace-Required $text $gpioPatched $gpioOriginal "Area51XR R3000 cabinet GPIO hook"
-    $text = Replace-Required $text $includePatched $includeOriginal "Area51XR Jaguar main include"
+
+    if ($text.Contains($legacyIncludePatched)) {
+        $text = Replace-Required $text $legacyIncludePatched $legacyIncludeOriginal "Area51XR legacy Jaguar include"
+    }
+    if ($text.Contains($safeIncludePatched)) {
+        $text = Replace-Required $text $safeIncludePatched $safeIncludeOriginal "Area51XR safe Jaguar include"
+    }
+
     Write-PreservedNewlines $text
     Write-Host "Area51XR cabinet-control integration reverted."
     exit 0
 }
 
-if ($text.Contains($gpioPatched) -and $text.Contains($includePatched)) {
-    Write-Host "Area51XR cabinet-control integration is already applied."
-    exit 0
+$changed = $false
+
+# Automatically repair the earlier patch that inserted windows.h transitively
+# before the M68000/MIPS headers.
+if ($text.Contains($legacyIncludePatched)) {
+    $text = Replace-Required $text $legacyIncludePatched $legacyIncludeOriginal "Area51XR legacy Jaguar include"
+    $changed = $true
 }
 
-if (-not $text.Contains($includePatched)) {
-    $text = Replace-Required $text $includeOriginal $includePatched "Jaguar main include block"
+if (-not $text.Contains($safeIncludePatched)) {
+    $text = Replace-Required $text $safeIncludeOriginal $safeIncludePatched "safe post-device include point"
+    $changed = $true
 }
+
 if (-not $text.Contains($gpioPatched)) {
     $text = Replace-Required $text $gpioOriginal $gpioPatched "R3000 cabinet GPIO block"
+    $changed = $true
 }
 
-Write-PreservedNewlines $text
-Write-Host "Area51XR cabinet-control integration applied."
+if ($changed) {
+    Write-PreservedNewlines $text
+    Write-Host "Area51XR cabinet-control integration applied/upgraded."
+}
+else {
+    Write-Host "Area51XR cabinet-control integration is already applied."
+}
