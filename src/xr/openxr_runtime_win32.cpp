@@ -59,6 +59,8 @@ struct OpenXrRuntime::Impl {
     XrActionSet action_set{XR_NULL_HANDLE};
     XrAction aim_action{XR_NULL_HANDLE};
     XrAction fire_action{XR_NULL_HANDLE};
+    XrAction coin_action{XR_NULL_HANDLE};
+    XrAction start_action{XR_NULL_HANDLE};
     XrPath right_hand{XR_NULL_PATH};
     XrSwapchain quad_swapchain{XR_NULL_HANDLE};
     std::vector<XrSwapchainImageD3D11KHR> quad_images;
@@ -201,11 +203,11 @@ struct OpenXrRuntime::Impl {
         return true;
     }
 
-    bool suggest_bindings(const char* profile_path, const char* trigger_path) {
+    bool suggest_simple_bindings() {
         XrPath profile{}, aim_path{}, fire_path{};
-        if (XR_FAILED(xrStringToPath(instance, profile_path, &profile)) ||
+        if (XR_FAILED(xrStringToPath(instance, "/interaction_profiles/khr/simple_controller", &profile)) ||
             XR_FAILED(xrStringToPath(instance, "/user/hand/right/input/aim/pose", &aim_path)) ||
-            XR_FAILED(xrStringToPath(instance, trigger_path, &fire_path))) {
+            XR_FAILED(xrStringToPath(instance, "/user/hand/right/input/select/click", &fire_path))) {
             return false;
         }
 
@@ -218,6 +220,39 @@ struct OpenXrRuntime::Impl {
         suggested.countSuggestedBindings = static_cast<std::uint32_t>(bindings.size());
         suggested.suggestedBindings = bindings.data();
         return XR_SUCCEEDED(xrSuggestInteractionProfileBindings(instance, &suggested));
+    }
+
+    bool suggest_touch_bindings() {
+        XrPath profile{}, aim_path{}, fire_path{}, start_path{}, coin_path{};
+        if (XR_FAILED(xrStringToPath(instance, "/interaction_profiles/oculus/touch_controller", &profile)) ||
+            XR_FAILED(xrStringToPath(instance, "/user/hand/right/input/aim/pose", &aim_path)) ||
+            XR_FAILED(xrStringToPath(instance, "/user/hand/right/input/trigger/value", &fire_path)) ||
+            XR_FAILED(xrStringToPath(instance, "/user/hand/right/input/a/click", &start_path)) ||
+            XR_FAILED(xrStringToPath(instance, "/user/hand/right/input/b/click", &coin_path))) {
+            return false;
+        }
+
+        const std::array<XrActionSuggestedBinding, 4> bindings{{
+            {aim_action, aim_path},
+            {fire_action, fire_path},
+            {start_action, start_path},
+            {coin_action, coin_path}
+        }};
+        XrInteractionProfileSuggestedBinding suggested{XR_TYPE_INTERACTION_PROFILE_SUGGESTED_BINDING};
+        suggested.interactionProfile = profile;
+        suggested.countSuggestedBindings = static_cast<std::uint32_t>(bindings.size());
+        suggested.suggestedBindings = bindings.data();
+        return XR_SUCCEEDED(xrSuggestInteractionProfileBindings(instance, &suggested));
+    }
+
+    bool create_boolean_action(const char* name, const char* localized_name, XrAction& action) {
+        XrActionCreateInfo info{XR_TYPE_ACTION_CREATE_INFO};
+        info.actionType = XR_ACTION_TYPE_BOOLEAN_INPUT;
+        std::strncpy(info.actionName, name, XR_MAX_ACTION_NAME_SIZE - 1);
+        std::strncpy(info.localizedActionName, localized_name, XR_MAX_LOCALIZED_ACTION_NAME_SIZE - 1);
+        info.countSubactionPaths = 1;
+        info.subactionPaths = &right_hand;
+        return XR_SUCCEEDED(xrCreateAction(action_set, &info, &action));
     }
 
     bool create_actions() {
@@ -242,22 +277,18 @@ struct OpenXrRuntime::Impl {
             return fail("aim action creation failed");
         }
 
-        XrActionCreateInfo fire_info{XR_TYPE_ACTION_CREATE_INFO};
-        fire_info.actionType = XR_ACTION_TYPE_BOOLEAN_INPUT;
-        std::strncpy(fire_info.actionName, "fire", XR_MAX_ACTION_NAME_SIZE - 1);
-        std::strncpy(fire_info.localizedActionName, "Fire", XR_MAX_LOCALIZED_ACTION_NAME_SIZE - 1);
-        fire_info.countSubactionPaths = 1;
-        fire_info.subactionPaths = &right_hand;
-        if (XR_FAILED(xrCreateAction(action_set, &fire_info, &fire_action))) {
+        if (!create_boolean_action("fire", "Fire", fire_action)) {
             return fail("fire action creation failed");
         }
+        if (!create_boolean_action("coin", "Insert Coin", coin_action)) {
+            return fail("coin action creation failed");
+        }
+        if (!create_boolean_action("start", "Start Continue", start_action)) {
+            return fail("start action creation failed");
+        }
 
-        const bool simple_ok = suggest_bindings(
-            "/interaction_profiles/khr/simple_controller",
-            "/user/hand/right/input/select/click");
-        const bool touch_ok = suggest_bindings(
-            "/interaction_profiles/oculus/touch_controller",
-            "/user/hand/right/input/trigger/value");
+        const bool simple_ok = suggest_simple_bindings();
+        const bool touch_ok = suggest_touch_bindings();
         if (!simple_ok && !touch_ok) {
             return fail("no supported controller bindings could be suggested");
         }
@@ -355,6 +386,18 @@ struct OpenXrRuntime::Impl {
             }
             event = XrEventDataBuffer{XR_TYPE_EVENT_DATA_BUFFER};
         }
+        return true;
+    }
+
+    bool read_boolean_action(XrAction action, bool& down) {
+        XrActionStateGetInfo get{XR_TYPE_ACTION_STATE_GET_INFO};
+        get.action = action;
+        get.subactionPath = right_hand;
+        XrActionStateBoolean state{XR_TYPE_ACTION_STATE_BOOLEAN};
+        if (XR_FAILED(xrGetActionStateBoolean(session, &get, &state))) {
+            return false;
+        }
+        down = state.isActive && state.currentState == XR_TRUE;
         return true;
     }
 };
@@ -495,12 +538,14 @@ bool OpenXrRuntime::poll(XrInputState& state) {
         }
     }
 
-    XrActionStateGetInfo fire_get{XR_TYPE_ACTION_STATE_GET_INFO};
-    fire_get.action = p.fire_action;
-    fire_get.subactionPath = p.right_hand;
-    XrActionStateBoolean fire_state{XR_TYPE_ACTION_STATE_BOOLEAN};
-    if (XR_SUCCEEDED(p.xrGetActionStateBoolean(p.session, &fire_get, &fire_state)) && fire_state.isActive) {
-        state.trigger_down = fire_state.currentState == XR_TRUE;
+    if (!p.read_boolean_action(p.fire_action, state.trigger_down)) {
+        return p.fail("fire action state unavailable");
+    }
+    if (!p.read_boolean_action(p.coin_action, state.coin_down)) {
+        return p.fail("coin action state unavailable");
+    }
+    if (!p.read_boolean_action(p.start_action, state.start_down)) {
+        return p.fail("start action state unavailable");
     }
     return true;
 }
