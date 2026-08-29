@@ -2,6 +2,8 @@ param(
     [string]$RomPath = "D:\MAME\roms",
     [string]$MsysRoot = "C:\msys64",
     [string]$MameRoot = "",
+    [ValidateSet("Auto", "Active", "VDXR", "MetaLink", "SteamVR")]
+    [string]$Runtime = "Auto",
     [switch]$SkipBuild
 )
 
@@ -73,14 +75,19 @@ $runtimeLines.Add("Area51XR play launch: $(Get-Date -Format o)")
 $runtimeLines.Add("Host: $hostExe")
 $runtimeLines.Add("MAME: $mameExe")
 $runtimeLines.Add("Media: $mediaPath")
+$runtimeLines.Add("Runtime preference: $Runtime")
 
+$activeRuntimeManifests = New-Object System.Collections.Generic.List[string]
 foreach ($registryPath in @(
     "HKLM:\SOFTWARE\Khronos\OpenXR\1",
     "HKCU:\SOFTWARE\Khronos\OpenXR\1"
 )) {
     try {
-        $runtime = (Get-ItemProperty -Path $registryPath -Name ActiveRuntime -ErrorAction Stop).ActiveRuntime
-        $runtimeLines.Add("$registryPath ActiveRuntime=$runtime")
+        $activeRuntime = [string](Get-ItemProperty -Path $registryPath -Name ActiveRuntime -ErrorAction Stop).ActiveRuntime
+        $runtimeLines.Add("$registryPath ActiveRuntime=$activeRuntime")
+        if (-not [string]::IsNullOrWhiteSpace($activeRuntime)) {
+            $activeRuntimeManifests.Add($activeRuntime)
+        }
     }
     catch {
         $runtimeLines.Add("$registryPath ActiveRuntime=<not set>")
@@ -112,6 +119,18 @@ function Resolve-RuntimeLibrary([string]$ManifestPath) {
     }
 }
 
+function Get-RuntimeName([string]$ManifestPath) {
+    if ($ManifestPath -match '(?i)virtual.?desktop') { return "VDXR" }
+    if ($ManifestPath -match '(?i)oculus|meta') { return "MetaLink" }
+    if ($ManifestPath -match '(?i)steamxr|steamvr') { return "SteamVR" }
+    return "Active"
+}
+
+function Get-RuntimeAttempts([string]$Name) {
+    if ($Name -eq "VDXR") { return 3 }
+    return 2
+}
+
 $runtimeCandidates = New-Object System.Collections.Generic.List[object]
 $seenRuntimeManifests = @{}
 function Add-RuntimeCandidate([string]$Name, [string]$ManifestPath, [int]$Attempts) {
@@ -133,19 +152,78 @@ function Add-RuntimeCandidate([string]$Name, [string]$ManifestPath, [int]$Attemp
     })
 }
 
-$vdxrDir = "C:\Program Files\Virtual Desktop Streamer\OpenXR"
-if (Test-Path $vdxrDir) {
-    Add-RuntimeCandidate "VDXR" (Join-Path $vdxrDir "virtualdesktop-openxr.json") 3
-    Get-ChildItem -Path $vdxrDir -Filter "virtualdesktop-openxr*.json" -File -ErrorAction SilentlyContinue |
-        Where-Object { $_.Name -notmatch '(?i)-32\.json$' } |
-        ForEach-Object { Add-RuntimeCandidate "VDXR" $_.FullName 3 }
+function Add-ActiveRuntimes {
+    foreach ($manifest in $activeRuntimeManifests) {
+        $name = Get-RuntimeName $manifest
+        Add-RuntimeCandidate $name $manifest (Get-RuntimeAttempts $name)
+    }
 }
 
-Add-RuntimeCandidate "SteamVR" "C:\Program Files (x86)\Steam\steamapps\common\SteamVR\steamxr_win64.json" 1
-Add-RuntimeCandidate "SteamVR" "C:\Program Files\Steam\steamapps\common\SteamVR\steamxr_win64.json" 1
+function Add-VdxrRuntimes {
+    $vdxrDirs = @(
+        "C:\Program Files\Virtual Desktop Streamer\OpenXR",
+        "C:\Program Files\VirtualDesktopXR"
+    )
+    foreach ($vdxrDir in $vdxrDirs) {
+        if (-not (Test-Path $vdxrDir)) { continue }
+        Get-ChildItem -Path $vdxrDir -Filter "virtualdesktop-openxr*.json" -File -ErrorAction SilentlyContinue |
+            Where-Object { $_.Name -notmatch '(?i)-32\.json$' } |
+            Sort-Object Name |
+            ForEach-Object { Add-RuntimeCandidate "VDXR" $_.FullName 3 }
+    }
+}
+
+function Add-MetaLinkRuntimes {
+    Add-RuntimeCandidate "MetaLink" "C:\Program Files\Oculus\Support\oculus-runtime\oculus_openxr_64.json" 2
+}
+
+function Add-SteamVrRuntimes {
+    Add-RuntimeCandidate "SteamVR" "C:\Program Files (x86)\Steam\steamapps\common\SteamVR\steamxr_win64.json" 2
+    Add-RuntimeCandidate "SteamVR" "C:\Program Files\Steam\steamapps\common\SteamVR\steamxr_win64.json" 2
+
+    foreach ($steamRegistry in @(
+        "HKCU:\SOFTWARE\Valve\Steam",
+        "HKLM:\SOFTWARE\WOW6432Node\Valve\Steam"
+    )) {
+        try {
+            $props = Get-ItemProperty -Path $steamRegistry -ErrorAction Stop
+            foreach ($propertyName in @("SteamPath", "InstallPath")) {
+                $steamRoot = [string]$props.$propertyName
+                if (-not [string]::IsNullOrWhiteSpace($steamRoot)) {
+                    Add-RuntimeCandidate "SteamVR" (Join-Path $steamRoot "steamapps\common\SteamVR\steamxr_win64.json") 2
+                }
+            }
+        }
+        catch {}
+    }
+}
+
+switch ($Runtime) {
+    "Active" {
+        Add-ActiveRuntimes
+    }
+    "VDXR" {
+        Add-VdxrRuntimes
+    }
+    "MetaLink" {
+        Add-MetaLinkRuntimes
+    }
+    "SteamVR" {
+        Add-SteamVrRuntimes
+    }
+    default {
+        # Respect the user's currently selected system runtime first. This is
+        # what lets Meta Horizon Link/Air Link or SteamVR work without requiring
+        # Virtual Desktop or changing the machine-wide OpenXR setting.
+        Add-ActiveRuntimes
+        Add-VdxrRuntimes
+        Add-MetaLinkRuntimes
+        Add-SteamVrRuntimes
+    }
+}
 
 if ($runtimeCandidates.Count -eq 0) {
-    throw "No usable 64-bit VDXR or SteamVR OpenXR runtime manifest was found. Install/update Virtual Desktop Streamer or SteamVR."
+    throw "No usable 64-bit OpenXR runtime was found for '$Runtime'. Install/activate Meta Horizon Link, SteamVR, or Virtual Desktop, then connect the headset before launching Area51XR."
 }
 
 $runtimeLines.Add("Runtime candidates:")
@@ -171,6 +249,7 @@ Set-ScopedEnvironment "XR_ENABLE_API_LAYERS" $null
 Set-ScopedEnvironment "XR_API_LAYER_PATH" $null
 Set-ScopedEnvironment "XR_LOADER_DEBUG" "warn"
 
+$implicitLayers = New-Object System.Collections.Generic.List[object]
 $implicitRoots = @(
     "HKLM:\SOFTWARE\Khronos\OpenXR\1\ApiLayers\Implicit",
     "HKCU:\SOFTWARE\Khronos\OpenXR\1\ApiLayers\Implicit"
@@ -184,19 +263,11 @@ foreach ($implicitRoot in $implicitRoots) {
             if ($enabledValue -ne 0 -or -not (Test-Path $manifestName)) { continue }
             try {
                 $layerJson = Get-Content -Raw -Path $manifestName | ConvertFrom-Json
-                $layerName = [string]$layerJson.api_layer.name
-                $disableVariable = [string]$layerJson.api_layer.disable_environment
-                if ($layerName -match '(?i)virtual.?desktop' -or $manifestName -match '(?i)virtual.?desktop') {
-                    $runtimeLines.Add("Preserved Virtual Desktop implicit OpenXR layer: $layerName")
-                    continue
-                }
-                if (-not [string]::IsNullOrWhiteSpace($disableVariable)) {
-                    Set-ScopedEnvironment $disableVariable "1"
-                    $runtimeLines.Add("Disabled third-party implicit OpenXR layer for Area51XR: $layerName ($disableVariable)")
-                }
-                else {
-                    $runtimeLines.Add("Third-party implicit OpenXR layer has no disable variable: $layerName ($manifestName)")
-                }
+                $implicitLayers.Add([PSCustomObject]@{
+                    Name = [string]$layerJson.api_layer.name
+                    Manifest = [string]$manifestName
+                    DisableVariable = [string]$layerJson.api_layer.disable_environment
+                })
             }
             catch {
                 $runtimeLines.Add("Could not inspect implicit OpenXR layer: $manifestName")
@@ -205,6 +276,31 @@ foreach ($implicitRoot in $implicitRoots) {
     }
     catch {
         $runtimeLines.Add("Could not inspect implicit OpenXR layer registry: $implicitRoot")
+    }
+}
+
+function Configure-ImplicitLayersForRuntime([string]$RuntimeName) {
+    foreach ($layer in $implicitLayers) {
+        if ([string]::IsNullOrWhiteSpace($layer.DisableVariable)) { continue }
+        $ownedByRuntime = $false
+        if ($RuntimeName -eq "VDXR" -and ($layer.Name -match '(?i)virtual.?desktop' -or $layer.Manifest -match '(?i)virtual.?desktop')) {
+            $ownedByRuntime = $true
+        }
+        elseif ($RuntimeName -eq "MetaLink" -and ($layer.Name -match '(?i)oculus|meta' -or $layer.Manifest -match '(?i)oculus|meta')) {
+            $ownedByRuntime = $true
+        }
+        elseif ($RuntimeName -eq "SteamVR" -and ($layer.Name -match '(?i)steam' -or $layer.Manifest -match '(?i)steam')) {
+            $ownedByRuntime = $true
+        }
+
+        if ($ownedByRuntime) {
+            Set-ScopedEnvironment $layer.DisableVariable $null
+            $runtimeLines.Add("Preserved $RuntimeName implicit OpenXR layer: $($layer.Name)")
+        }
+        else {
+            Set-ScopedEnvironment $layer.DisableVariable "1"
+            $runtimeLines.Add("Disabled unrelated implicit OpenXR layer for $RuntimeName: $($layer.Name) ($($layer.DisableVariable))")
+        }
     }
 }
 
@@ -237,6 +333,7 @@ try {
     Write-Host "Starting clean OpenXR runtime negotiation..."
 
     foreach ($candidate in $runtimeCandidates) {
+        Configure-ImplicitLayersForRuntime $candidate.Name
         for ($attempt = 1; $attempt -le $candidate.Attempts; ++$attempt) {
             Set-ScopedEnvironment "XR_RUNTIME_JSON" $candidate.Manifest
             Remove-Item $hostOut, $hostErr -Force -ErrorAction SilentlyContinue
@@ -276,16 +373,18 @@ try {
 
             if ($candidate.Name -eq "VDXR") {
                 Save-VdxrLog
-                Write-Host "VDXR did not initialize. Retrying/falling back without launching MAME."
-                Start-Sleep -Seconds 1
             }
+            Write-Host "$($candidate.Name) did not initialize. Retrying/falling back without launching MAME."
+            Start-Sleep -Seconds 1
         }
         if ($selectedRuntime) { break }
     }
 
     if (-not $selectedRuntime) {
-        Show-VdxrLogTail
-        throw "No OpenXR runtime could initialize Area51XR. Last host error: $lastOpenXrError Runtime diagnostics: $runtimeLog VDXR diagnostics: $vdxrLogCopy"
+        if (($runtimeCandidates | Where-Object { $_.Name -eq "VDXR" }).Count -gt 0) {
+            Show-VdxrLogTail
+        }
+        throw "No OpenXR runtime could initialize Area51XR. Last host error: $lastOpenXrError Runtime diagnostics: $runtimeLog"
     }
 
     Add-Content -Path $runtimeLog -Value "Selected runtime=$($selectedRuntime.Name)"
@@ -330,7 +429,7 @@ try {
             $exitCode = $hostProcess.ExitCode
             $errorText = if (Test-Path $hostErr) { Get-Content -Raw $hostErr } else { "" }
             $outputTail = if (Test-Path $hostOut) { (Get-Content -Path $hostOut -Tail 40 -ErrorAction SilentlyContinue) -join [Environment]::NewLine } else { "" }
-            Save-VdxrLog
+            if ($selectedRuntime.Name -eq "VDXR") { Save-VdxrLog }
             throw "Area51XR OpenXR host exited after initialization. ExitCode=$exitCode Error=$errorText OutputTail=$outputTail"
         }
         if ($mameProcess.HasExited) {
@@ -371,7 +470,9 @@ finally {
     if ($hostProcess -and -not $hostProcess.HasExited) {
         Stop-Process -Id $hostProcess.Id -Force -ErrorAction SilentlyContinue
     }
-    Save-VdxrLog
+    if ($selectedRuntime -and $selectedRuntime.Name -eq "VDXR") {
+        Save-VdxrLog
+    }
     foreach ($name in $savedEnvironment.Keys) {
         $previous = $savedEnvironment[$name]
         if ($null -eq $previous) {
