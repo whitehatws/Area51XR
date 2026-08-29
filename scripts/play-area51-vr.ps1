@@ -212,9 +212,6 @@ switch ($Runtime) {
         Add-SteamVrRuntimes
     }
     default {
-        # Respect the user's currently selected system runtime first. This is
-        # what lets Meta Horizon Link/Air Link or SteamVR work without requiring
-        # Virtual Desktop or changing the machine-wide OpenXR setting.
         Add-ActiveRuntimes
         Add-VdxrRuntimes
         Add-MetaLinkRuntimes
@@ -295,11 +292,11 @@ function Configure-ImplicitLayersForRuntime([string]$RuntimeName) {
 
         if ($ownedByRuntime) {
             Set-ScopedEnvironment $layer.DisableVariable $null
-            $runtimeLines.Add("Preserved $RuntimeName implicit OpenXR layer: $($layer.Name)")
+            $runtimeLines.Add("Preserved ${RuntimeName} implicit OpenXR layer: $($layer.Name)")
         }
         else {
             Set-ScopedEnvironment $layer.DisableVariable "1"
-            $runtimeLines.Add("Disabled unrelated implicit OpenXR layer for $RuntimeName: $($layer.Name) ($($layer.DisableVariable))")
+            $runtimeLines.Add("Disabled unrelated implicit OpenXR layer for ${RuntimeName}: $($layer.Name) ($($layer.DisableVariable))")
         }
     }
 }
