@@ -45,6 +45,8 @@ HostTickResult XrHost::tick() {
             last_aim_ = *projected;
             result.aim_valid = true;
             result.aim = *projected;
+        } else {
+            result.offscreen = true;
         }
     }
 
@@ -52,11 +54,13 @@ HostTickResult XrHost::tick() {
         result.aim = last_aim_;
     }
 
+    const bool fire = result.session_running && input.pose_valid && result.trigger_down;
     write_gun_state(
         shared_,
         result.aim.x,
         result.aim.y,
-        result.session_running && input.pose_valid && result.trigger_down);
+        fire,
+        result.offscreen);
 
     if (result.session_running) {
         VideoFrameView frame{};
