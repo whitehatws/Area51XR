@@ -25,6 +25,8 @@ HostTickResult XrHost::tick() {
 
     result.session_running = input.session_running;
     result.trigger_down = input.trigger_down;
+    result.coin_down = input.coin_down;
+    result.start_down = input.start_down;
 
     // Read the frame status after xrWaitFrame/action sync so we present the
     // freshest MAME frame available for this headset frame.
@@ -34,8 +36,8 @@ HostTickResult XrHost::tick() {
             static_cast<float>(result.frame.height) / static_cast<float>(result.frame.width);
     }
 
-    // Publish gun input immediately after OpenXR input sampling. Do not make
-    // MAME wait for a framebuffer copy before it can consume the next shot.
+    // Publish cabinet input immediately after OpenXR input sampling. Do not make
+    // MAME wait for a framebuffer copy before it can consume the next shot/button.
     if (input.session_running && input.pose_valid) {
         if (const auto projected = project_aim_to_plane(input.aim, plane_)) {
             last_aim_ = *projected;
@@ -51,12 +53,16 @@ HostTickResult XrHost::tick() {
     }
 
     const bool fire = result.session_running && input.pose_valid && result.trigger_down;
+    const bool coin = result.session_running && input.coin_down;
+    const bool start = result.session_running && input.start_down;
     write_gun_state(
         shared_,
         result.aim.x,
         result.aim.y,
         fire,
-        result.offscreen);
+        result.offscreen,
+        coin,
+        start);
 
     if (result.frame.frame_number != 0 && result.frame.frame_number != last_copied_frame_) {
         MameFrameHeader header{};
