@@ -6,7 +6,12 @@
 
 namespace area51xr {
 
-void write_gun_state(MameSharedState& shared, float aim_x, float aim_y, bool trigger) noexcept;
+void write_gun_state(
+    MameSharedState& shared,
+    float aim_x,
+    float aim_y,
+    bool trigger,
+    bool offscreen = false) noexcept;
 
 struct FrameStatus {
     std::uint64_t frame_number{};
