@@ -22,7 +22,8 @@ struct GunState {
     float aim_x;
     float aim_y;
     std::uint8_t trigger;
-    std::uint8_t reserved[7];
+    std::uint8_t offscreen;
+    std::uint8_t reserved[6];
 };
 
 struct FrameHeader {
