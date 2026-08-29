@@ -320,13 +320,18 @@ try {
     $reportedSession = $false
     $reportedFrame = $false
     $reportedAim = $false
+    $reportedCoin = $false
+    $reportedStart = $false
     while ($true) {
         Start-Sleep -Milliseconds 500
 
         if ($hostProcess.HasExited) {
+            $hostProcess.Refresh()
+            $exitCode = $hostProcess.ExitCode
             $errorText = if (Test-Path $hostErr) { Get-Content -Raw $hostErr } else { "" }
+            $outputTail = if (Test-Path $hostOut) { (Get-Content -Path $hostOut -Tail 40 -ErrorAction SilentlyContinue) -join [Environment]::NewLine } else { "" }
             Save-VdxrLog
-            throw "Area51XR OpenXR host exited after initialization. $errorText"
+            throw "Area51XR OpenXR host exited after initialization. ExitCode=$exitCode Error=$errorText OutputTail=$outputTail"
         }
         if ($mameProcess.HasExited) {
             Write-Host "MAME exited with code $($mameProcess.ExitCode)."
@@ -348,6 +353,14 @@ try {
         if (-not $reportedAim -and $hostText -match "aim=([0-9.]+),([0-9.]+) aim_valid=1") {
             $reportedAim = $true
             Write-Host "Right-controller aiming is active."
+        }
+        if (-not $reportedCoin -and $hostText -match "coin=down") {
+            $reportedCoin = $true
+            Write-Host "Quest B detected by OpenXR: Coin 1 is being sent to MAME."
+        }
+        if (-not $reportedStart -and $hostText -match "start=down") {
+            $reportedStart = $true
+            Write-Host "Quest A detected by OpenXR: Player 1 Start/Continue is being sent to MAME."
         }
     }
 }
