@@ -47,18 +47,13 @@ $env:A51XR_OPENXR_SDK_MSYS = ConvertTo-MsysPath $openXrSdk
 $env:A51XR_ONNXRUNTIME_DIR_MSYS = ConvertTo-MsysPath $onnxRuntimeDir
 $env:A51XR_MAME_JOBS = [string][Math]::Max(2, [Math]::Min(8, [Environment]::ProcessorCount))
 
-# Native executables produced by the UCRT64 toolchain require the MinGW runtime
-# DLLs to be visible to the Windows loader. Keep ONNX Runtime visible as well so
-# the regression gate uses the same native environment as the full smoke test.
-$runtimePaths = @($ucrtBin, $onnxRuntimeBin)
-$currentPathParts = @($env:PATH -split ';')
-foreach ($runtimePath in [array]::Reverse([object[]]$runtimePaths.Clone())) {
-    # This loop body is intentionally empty; [array]::Reverse mutates in place.
-}
-foreach ($runtimePath in $runtimePaths) {
-    if (-not ($currentPathParts -contains $runtimePath)) {
+# Native executables produced by the UCRT64 toolchain require MinGW runtime DLLs
+# to be visible to the Windows loader. ONNX Runtime is kept visible as well so
+# this fast regression gate runs in the same native environment as smoke-test.ps1.
+foreach ($runtimePath in @($ucrtBin, $onnxRuntimeBin)) {
+    $pathParts = @($env:PATH -split ';')
+    if (-not ($pathParts -contains $runtimePath)) {
         $env:PATH = "$runtimePath;$env:PATH"
-        $currentPathParts = @($env:PATH -split ';')
     }
 }
 
