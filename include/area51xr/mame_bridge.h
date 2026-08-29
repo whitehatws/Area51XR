@@ -13,7 +13,9 @@ struct MameGunState {
     float aim_y{};
     std::uint8_t trigger{};
     std::uint8_t offscreen{};
-    std::uint8_t reserved[6]{};
+    std::uint8_t coin{};
+    std::uint8_t start{};
+    std::uint8_t reserved[4]{};
 };
 
 struct MameFrameHeader {
