@@ -12,7 +12,6 @@ bool XrHost::initialize() {
 
 HostTickResult XrHost::tick() {
     HostTickResult result{};
-    result.frame = read_frame_status(shared_);
 
     if (!initialized_) {
         return result;
@@ -27,19 +26,16 @@ HostTickResult XrHost::tick() {
     result.session_running = input.session_running;
     result.trigger_down = input.trigger_down;
 
-    if (result.frame.frame_number != 0 && result.frame.frame_number != last_copied_frame_) {
-        MameFrameHeader header{};
-        if (copy_latest_frame(shared_, header, frame_buffer_)) {
-            cached_frame_ = header;
-            last_copied_frame_ = header.frame_number;
-            has_frame_ = true;
-            if (header.width != 0 && header.height != 0) {
-                plane_.height = plane_.width *
-                    static_cast<float>(header.height) / static_cast<float>(header.width);
-            }
-        }
+    // Read the frame status after xrWaitFrame/action sync so we present the
+    // freshest MAME frame available for this headset frame.
+    result.frame = read_frame_status(shared_);
+    if (result.frame.width != 0 && result.frame.height != 0) {
+        plane_.height = plane_.width *
+            static_cast<float>(result.frame.height) / static_cast<float>(result.frame.width);
     }
 
+    // Publish gun input immediately after OpenXR input sampling. Do not make
+    // MAME wait for a framebuffer copy before it can consume the next shot.
     if (input.session_running && input.pose_valid) {
         if (const auto projected = project_aim_to_plane(input.aim, plane_)) {
             last_aim_ = *projected;
@@ -61,6 +57,15 @@ HostTickResult XrHost::tick() {
         result.aim.y,
         fire,
         result.offscreen);
+
+    if (result.frame.frame_number != 0 && result.frame.frame_number != last_copied_frame_) {
+        MameFrameHeader header{};
+        if (copy_latest_frame(shared_, header, frame_buffer_)) {
+            cached_frame_ = header;
+            last_copied_frame_ = header.frame_number;
+            has_frame_ = true;
+        }
+    }
 
     if (result.session_running) {
         VideoFrameView frame{};
