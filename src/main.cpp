@@ -86,6 +86,8 @@ int run_xr_bridge() {
     bool logged_frame = false;
     bool logged_valid_aim = false;
     bool last_offscreen = false;
+    bool last_coin = false;
+    bool last_start = false;
     auto next_status_log = std::chrono::steady_clock::now();
 
     for (;;) {
@@ -106,19 +108,24 @@ int run_xr_bridge() {
             const auto now = std::chrono::steady_clock::now();
             const bool aim_became_valid = tick.aim_valid && !logged_valid_aim;
             const bool offscreen_changed = tick.offscreen != last_offscreen;
+            const bool controls_changed = tick.coin_down != last_coin || tick.start_down != last_start;
             const bool periodic_status = now >= next_status_log;
 
-            if (!logged_frame || aim_became_valid || offscreen_changed || periodic_status) {
+            if (!logged_frame || aim_became_valid || offscreen_changed || controls_changed || periodic_status) {
                 std::cout << "frame=" << tick.frame.frame_number
                           << " size=" << tick.frame.width << 'x' << tick.frame.height
                           << " aim=" << tick.aim.x << ',' << tick.aim.y
                           << " aim_valid=" << (tick.aim_valid ? 1 : 0)
                           << " offscreen=" << (tick.offscreen ? 1 : 0)
                           << " trigger=" << (tick.trigger_down ? "down" : "up")
+                          << " coin=" << (tick.coin_down ? "down" : "up")
+                          << " start=" << (tick.start_down ? "down" : "up")
                           << std::endl;
                 logged_frame = true;
                 logged_valid_aim = logged_valid_aim || tick.aim_valid;
                 last_offscreen = tick.offscreen;
+                last_coin = tick.coin_down;
+                last_start = tick.start_down;
                 next_status_log = now + std::chrono::seconds(1);
             }
         }
