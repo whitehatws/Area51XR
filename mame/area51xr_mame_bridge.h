@@ -218,23 +218,15 @@ inline std::uint8_t normalized_to_mame_axis(float value)
 
 inline std::uint16_t apply_system_input(std::uint16_t input)
 {
-    if (const auto* const xr = gun_state())
-    {
-        input |= 0x0001;
-        if (xr->coin)
-            input &= ~std::uint16_t(0x0001);
-    }
+    if (const auto* const xr = gun_state(); xr && xr->coin)
+        input &= ~std::uint16_t(0x0001);
     return input;
 }
 
 inline std::uint32_t apply_p1_p2_input(std::uint32_t input)
 {
-    if (const auto* const xr = gun_state())
-    {
-        input |= 0x01000000;
-        if (xr->start)
-            input &= ~std::uint32_t(0x01000000);
-    }
+    if (const auto* const xr = gun_state(); xr && xr->start)
+        input &= ~std::uint32_t(0x01000000);
     return input;
 }
 
