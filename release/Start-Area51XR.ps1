@@ -29,15 +29,16 @@ if (-not (Test-Path $RomPath)) {
 
 function Test-Area51Media([string]$Path) {
     $roots = @($Path -split ';') | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
+    $romFound = $false
+    $chdFound = $false
     foreach ($mediaRoot in $roots) {
         $archive = Join-Path $mediaRoot "area51.zip"
         $looseRom = Join-Path $mediaRoot "area51\2-c_area_51_hh.hh"
         $chd = Join-Path $mediaRoot "area51\area51.chd"
-        if ((Test-Path $chd) -and ((Test-Path $archive) -or (Test-Path $looseRom))) {
-            return $true
-        }
+        if ((Test-Path $archive) -or (Test-Path $looseRom)) { $romFound = $true }
+        if (Test-Path $chd) { $chdFound = $true }
     }
-    return $false
+    return $romFound -and $chdFound
 }
 
 if (-not (Test-Area51Media $RomPath)) {
@@ -47,7 +48,7 @@ if (-not (Test-Area51Media $RomPath)) {
     Write-Host "Place the Area 51 board ROMs and area51.chd under:"
     Write-Host "  $defaultMedia\area51"
     Write-Host ""
-    Write-Host "Or launch Start-Area51XR.ps1 with -RomPath pointing to an existing MAME media folder."
+    Write-Host "Or launch Start-Area51XR.ps1 with -RomPath pointing to an existing compatible media folder."
     Write-Host "No ROMs, CHDs, or original game assets are included with Area51XR."
     if ($RomPath -eq $defaultMedia) {
         Start-Process explorer.exe $defaultMedia -ErrorAction SilentlyContinue
@@ -70,8 +71,10 @@ $runtimeLog = Join-Path $logDir "openxr-runtime.txt"
 $vdxrLogCopy = Join-Path $logDir "vdxr-openxr.log"
 
 Write-Host "Verifying Area 51 media..."
-& $emulatorExe area51 -rompath $RomPath -verifyroms | Write-Host
-if ($LASTEXITCODE -ne 0) {
+$auditOutput = @(& $emulatorExe -rompath $RomPath -verifyroms area51 2>&1)
+$auditExit = $LASTEXITCODE
+$auditOutput | Write-Host
+if ($auditExit -ne 0) {
     throw "Area 51 media verification failed. Check the files in '$RomPath'."
 }
 
@@ -142,7 +145,8 @@ function Add-RuntimeCandidate([string]$Name, [string]$ManifestPath, [int]$Attemp
 function Add-ActiveRuntimes {
     foreach ($manifest in $activeRuntimeManifests) {
         $name = Get-RuntimeName $manifest
-        Add-RuntimeCandidate $name $manifest $(if ($name -eq "VDXR") { 3 } else { 2 })
+        $attempts = if ($name -eq "VDXR") { 3 } else { 2 }
+        Add-RuntimeCandidate $name $manifest $attempts
     }
 }
 
@@ -260,7 +264,8 @@ function Configure-ImplicitLayersForRuntime([string]$RuntimeName) {
             ($RuntimeName -eq "VDXR" -and ($layer.Name -match '(?i)virtual.?desktop' -or $layer.Manifest -match '(?i)virtual.?desktop')) -or
             ($RuntimeName -eq "MetaLink" -and ($layer.Name -match '(?i)oculus|meta' -or $layer.Manifest -match '(?i)oculus|meta')) -or
             ($RuntimeName -eq "SteamVR" -and ($layer.Name -match '(?i)steam' -or $layer.Manifest -match '(?i)steam'))
-        Set-ScopedEnvironment $layer.DisableVariable $(if ($owned) { $null } else { "1" })
+        if ($owned) { Set-ScopedEnvironment $layer.DisableVariable $null }
+        else { Set-ScopedEnvironment $layer.DisableVariable "1" }
     }
 }
 
