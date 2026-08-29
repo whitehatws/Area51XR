@@ -28,6 +28,8 @@ int main() {
     input.pose_valid = true;
     input.aim.position = {0.0f, 0.0f, 0.0f};
     input.trigger_down = true;
+    input.coin_down = true;
+    input.start_down = true;
 
     area51xr::SimulatedXrRuntime runtime(input);
     area51xr::XrHost host(runtime, *shared);
@@ -41,11 +43,15 @@ int main() {
     assert(near(first.aim.x, 0.5f));
     assert(near(first.aim.y, 0.5f));
     assert(first.trigger_down);
+    assert(first.coin_down);
+    assert(first.start_down);
     assert(first.frame.frame_number == 12);
     assert(first.frame_presented);
     assert(runtime.last_presented_frame() == 12);
     assert(shared->gun.trigger == 1);
     assert(shared->gun.offscreen == 0);
+    assert(shared->gun.coin == 1);
+    assert(shared->gun.start == 1);
     assert(near(shared->gun.aim_x, 0.5f));
     assert(near(shared->gun.aim_y, 0.5f));
 
@@ -54,13 +60,19 @@ int main() {
     input.aim.position = {2.0f, 0.0f, 0.0f};
     input.pose_valid = true;
     input.trigger_down = true;
+    input.coin_down = false;
+    input.start_down = false;
     runtime.set_state(input);
     const auto offscreen = host.tick();
     assert(!offscreen.aim_valid);
     assert(offscreen.offscreen);
     assert(offscreen.trigger_down);
+    assert(!offscreen.coin_down);
+    assert(!offscreen.start_down);
     assert(shared->gun.trigger == 1);
     assert(shared->gun.offscreen == 1);
+    assert(shared->gun.coin == 0);
+    assert(shared->gun.start == 0);
     assert(near(shared->gun.aim_x, 0.5f));
     assert(near(shared->gun.aim_y, 0.5f));
 
