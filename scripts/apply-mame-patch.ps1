@@ -43,7 +43,7 @@ $gunOriginal = @'
 		case 2:
 			return ioport("IN3")->read();
 '@.Replace("`r`n", "`n")
-$gunPatched = @'
+$gunPatchedOld = @'
 		case 1:
 			if (const auto *const xr_gun = area51xr_mame::gun_state())
 			{
@@ -52,6 +52,42 @@ $gunPatched = @'
 				const uint8_t rawy = area51xr_mame::normalized_to_mame_axis(xr_gun->aim_y);
 				beamx = visarea.left() + ((rawx * visarea.width()) >> 8);
 				beamy = visarea.top() + ((rawy * visarea.height()) >> 8);
+			}
+			else
+			{
+				get_crosshair_xy(0, beamx, beamy);
+			}
+			return (beamy << 16) | (beamx ^ 0x1ff);
+
+		case 2:
+		{
+			uint32_t input = ioport("IN3")->read();
+			if (const auto *const xr_gun = area51xr_mame::gun_state())
+			{
+				input |= 0x00080000;
+				if (xr_gun->trigger)
+					input &= ~0x00080000;
+			}
+			return input;
+		}
+'@.Replace("`r`n", "`n")
+$gunPatched = @'
+		case 1:
+			if (const auto *const xr_gun = area51xr_mame::gun_state())
+			{
+				const rectangle &visarea = m_screen->visible_area();
+				if (xr_gun->offscreen)
+				{
+					beamx = 0;
+					beamy = 0;
+				}
+				else
+				{
+					const uint8_t rawx = area51xr_mame::normalized_to_mame_axis(xr_gun->aim_x);
+					const uint8_t rawy = area51xr_mame::normalized_to_mame_axis(xr_gun->aim_y);
+					beamx = visarea.left() + ((rawx * visarea.width()) >> 8);
+					beamy = visarea.top() + ((rawy * visarea.height()) >> 8);
+				}
 			}
 			else
 			{
@@ -112,7 +148,15 @@ if ($Revert) {
     }
 
     $text = Replace-Required $text $includePatched $includeOriginal "Area51XR include"
-    $text = Replace-Required $text $gunPatched $gunOriginal "Area51XR gun hook"
+    if ($text.Contains($gunPatched)) {
+        $text = Replace-Required $text $gunPatched $gunOriginal "Area51XR gun hook"
+    }
+    elseif ($text.Contains($gunPatchedOld)) {
+        $text = Replace-Required $text $gunPatchedOld $gunOriginal "Area51XR legacy gun hook"
+    }
+    else {
+        throw "Could not find expected MAME source block: Area51XR gun hook. The MAME source may have changed."
+    }
     if ($text.Contains($screenPatched)) {
         $text = Replace-Required $text $screenPatched $screenOriginal "Area51XR frame hook"
     }
@@ -128,17 +172,25 @@ if ($Revert) {
     exit 0
 }
 
-if ($text.Contains($includePatched) -and $text.Contains($gunPatched) -and $text.Contains($screenPatched)) {
-    Copy-Item $bridge $targetBridge -Force
-    Write-Host "Area51XR MAME integration is already applied."
-    exit 0
+$upgraded = $false
+if ($text.Contains($gunPatchedOld)) {
+    $text = Replace-Required $text $gunPatchedOld $gunPatched "Area51XR legacy gun hook"
+    $upgraded = $true
+}
+if ($text.Contains($screenPatchedOld)) {
+    $text = Replace-Required $text $screenPatchedOld $screenPatched "Area51XR legacy frame hook"
+    $upgraded = $true
 }
 
-if ($text.Contains($includePatched) -and $text.Contains($gunPatched) -and $text.Contains($screenPatchedOld)) {
-    $text = Replace-Required $text $screenPatchedOld $screenPatched "Area51XR legacy frame hook"
+if ($text.Contains($includePatched) -and $text.Contains($gunPatched) -and $text.Contains($screenPatched)) {
     Copy-Item $bridge $targetBridge -Force
-    Write-PreservedNewlines $text
-    Write-Host "Area51XR MAME integration upgraded."
+    if ($upgraded) {
+        Write-PreservedNewlines $text
+        Write-Host "Area51XR MAME integration upgraded."
+    }
+    else {
+        Write-Host "Area51XR MAME integration is already applied."
+    }
     exit 0
 }
 
