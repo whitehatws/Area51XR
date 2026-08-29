@@ -300,6 +300,7 @@ try {
         "-rompath", $mediaPath,
         "-window",
         "-skip_gameinfo",
+        "-lowlatency",
         "-verbose"
     )
     $mameProcess = Start-Process -FilePath $mameExe -ArgumentList $mameArgs -PassThru `
@@ -309,7 +310,8 @@ try {
     Write-Host ""
     Write-Host "AREA51XR PLAY MODE STARTED"
     Write-Host "OpenXR runtime: $($selectedRuntime.Name)"
-    Write-Host "Right controller: aim + trigger."
+    Write-Host "MAME low-latency mode: enabled"
+    Write-Host "Right controller: aim + trigger. Point outside the game screen and pull trigger to reload."
     Write-Host "Keyboard fallback: 5 = coin, 1 = Player 1 start."
     Write-Host "Leave this PowerShell window open while playing."
     Write-Host "Press Ctrl+C here, or exit MAME, to stop the session."
