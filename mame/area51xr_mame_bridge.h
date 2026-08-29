@@ -92,16 +92,26 @@ public:
     }
 
     template <typename Bitmap, typename Rect>
-    void publish_bitmap(const Bitmap& bitmap, const Rect& visible)
+    void publish_bitmap(const Bitmap& bitmap, const Rect& requested)
     {
         if (!ensure_open())
             return;
 
-        const std::uint32_t width = static_cast<std::uint32_t>(visible.width());
-        const std::uint32_t height = static_cast<std::uint32_t>(visible.height());
+        if (bitmap.width() <= 0 || bitmap.height() <= 0)
+            return;
+
+        const int left = std::max(0, requested.left());
+        const int top = std::max(0, requested.top());
+        const int right = std::min(bitmap.width() - 1, requested.right());
+        const int bottom = std::min(bitmap.height() - 1, requested.bottom());
+        if (right < left || bottom < top)
+            return;
+
+        const std::uint32_t width = static_cast<std::uint32_t>(right - left + 1);
+        const std::uint32_t height = static_cast<std::uint32_t>(bottom - top + 1);
         const std::size_t row_bytes = static_cast<std::size_t>(width) * sizeof(std::uint32_t);
         const std::size_t payload_bytes = row_bytes * height;
-        if (payload_bytes > kFrameBufferBytes)
+        if (payload_bytes == 0 || payload_bytes > kFrameBufferBytes)
             return;
 
 #ifdef _WIN32
@@ -116,10 +126,9 @@ public:
         state_->frame.presentation_time_ns = 0;
         state_->frame.payload_bytes = payload_bytes;
 
-        const int left = visible.left();
         for (std::uint32_t row = 0; row < height; ++row)
         {
-            const int y = visible.top() + static_cast<int>(row);
+            const int y = top + static_cast<int>(row);
             std::memcpy(
                 state_->frame_pixels + static_cast<std::size_t>(row) * row_bytes,
                 &bitmap.pix(y, left),
@@ -127,6 +136,7 @@ public:
         }
 
 #ifdef _WIN32
+        MemoryBarrier();
         InterlockedIncrement64(reinterpret_cast<volatile LONG64*>(&state_->frame.sequence));
 #endif
     }
