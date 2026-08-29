@@ -64,6 +64,9 @@ Write-Host ""
 Write-Host "Free PCVR runtimes detected:"
 Write-Host "  Meta Horizon Link: $metaAvailable"
 Write-Host "  SteamVR:          $steamAvailable"
+Write-Host ""
+Write-Host "Note: Microsoft Mixed Reality Link / Windows App / Quest Virtual Display is desktop streaming only."
+Write-Host "It does not expose Quest 3 as a PC OpenXR headset and cannot run Area51XR VR."
 
 $selected = $Runtime
 if ($selected -eq "Auto") {
