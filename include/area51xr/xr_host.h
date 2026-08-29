@@ -13,6 +13,7 @@ struct HostTickResult {
     bool runtime_ok{};
     bool session_running{};
     bool aim_valid{};
+    bool offscreen{};
     NormalizedAim aim{};
     bool trigger_down{};
     bool frame_presented{};
