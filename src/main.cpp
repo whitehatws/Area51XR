@@ -83,6 +83,11 @@ int run_xr_bridge() {
     std::cout << "OpenXR bridge initialized. Waiting for runtime session and MAME frames." << std::endl;
     std::uint64_t last_frame = 0;
     bool last_running = false;
+    bool logged_frame = false;
+    bool logged_valid_aim = false;
+    bool last_offscreen = false;
+    auto next_status_log = std::chrono::steady_clock::now();
+
     for (;;) {
         const auto tick = host.tick();
         if (!tick.runtime_ok) {
@@ -94,15 +99,30 @@ int run_xr_bridge() {
             last_running = tick.session_running;
             std::cout << "xr_session=" << (last_running ? "running" : "waiting") << std::endl;
         }
-        if (tick.frame.frame_number != 0 && tick.frame.frame_number != last_frame) {
+
+        const bool new_frame = tick.frame.frame_number != 0 && tick.frame.frame_number != last_frame;
+        if (new_frame) {
             last_frame = tick.frame.frame_number;
-            std::cout << "frame=" << tick.frame.frame_number
-                      << " size=" << tick.frame.width << 'x' << tick.frame.height
-                      << " aim=" << tick.aim.x << ',' << tick.aim.y
-                      << " aim_valid=" << (tick.aim_valid ? 1 : 0)
-                      << " trigger=" << (tick.trigger_down ? "down" : "up")
-                      << std::endl;
+            const auto now = std::chrono::steady_clock::now();
+            const bool aim_became_valid = tick.aim_valid && !logged_valid_aim;
+            const bool offscreen_changed = tick.offscreen != last_offscreen;
+            const bool periodic_status = now >= next_status_log;
+
+            if (!logged_frame || aim_became_valid || offscreen_changed || periodic_status) {
+                std::cout << "frame=" << tick.frame.frame_number
+                          << " size=" << tick.frame.width << 'x' << tick.frame.height
+                          << " aim=" << tick.aim.x << ',' << tick.aim.y
+                          << " aim_valid=" << (tick.aim_valid ? 1 : 0)
+                          << " offscreen=" << (tick.offscreen ? 1 : 0)
+                          << " trigger=" << (tick.trigger_down ? "down" : "up")
+                          << std::endl;
+                logged_frame = true;
+                logged_valid_aim = logged_valid_aim || tick.aim_valid;
+                last_offscreen = tick.offscreen;
+                next_status_log = now + std::chrono::seconds(1);
+            }
         }
+
         if (!tick.session_running) {
             std::this_thread::sleep_for(std::chrono::milliseconds(50));
         }
