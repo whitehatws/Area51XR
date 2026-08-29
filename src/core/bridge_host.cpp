@@ -5,7 +5,12 @@
 
 namespace area51xr {
 
-void write_gun_state(MameSharedState& shared, float aim_x, float aim_y, bool trigger) noexcept {
+void write_gun_state(
+    MameSharedState& shared,
+    float aim_x,
+    float aim_y,
+    bool trigger,
+    bool offscreen) noexcept {
     std::atomic_ref<std::uint64_t> sequence(shared.gun.sequence);
     sequence.fetch_add(1, std::memory_order_acq_rel);
 
@@ -13,6 +18,7 @@ void write_gun_state(MameSharedState& shared, float aim_x, float aim_y, bool tri
     shared.gun.aim_x = std::clamp(aim_x, 0.0f, 1.0f);
     shared.gun.aim_y = std::clamp(aim_y, 0.0f, 1.0f);
     shared.gun.trigger = trigger ? 1 : 0;
+    shared.gun.offscreen = offscreen ? 1 : 0;
 
     sequence.fetch_add(1, std::memory_order_release);
 }
