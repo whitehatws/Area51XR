@@ -11,12 +11,14 @@ int main() {
     assert(shared->gun.aim_x == 0.25f);
     assert(shared->gun.aim_y == 0.75f);
     assert(shared->gun.trigger == 1);
+    assert(shared->gun.offscreen == 0);
     assert(shared->gun.sequence == 2);
 
-    area51xr::write_gun_state(*shared, -1.0f, 2.0f, false);
+    area51xr::write_gun_state(*shared, -1.0f, 2.0f, false, true);
     assert(shared->gun.aim_x == 0.0f);
     assert(shared->gun.aim_y == 1.0f);
     assert(shared->gun.trigger == 0);
+    assert(shared->gun.offscreen == 1);
     assert(shared->gun.sequence == 4);
 
     shared->frame.protocol_version = area51xr::kMameBridgeProtocolVersion;
