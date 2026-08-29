@@ -2,7 +2,14 @@
 
 #ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN
+#define NOMINMAX
 #include <windows.h>
+#ifdef ERROR
+#undef ERROR
+#endif
+#ifdef EXCEPTION_ILLEGAL_INSTRUCTION
+#undef EXCEPTION_ILLEGAL_INSTRUCTION
+#endif
 #endif
 
 #include <algorithm>
