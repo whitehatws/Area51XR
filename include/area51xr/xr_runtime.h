@@ -30,6 +30,8 @@ struct XrInputState {
     Pose head{};
     Pose aim{};
     bool trigger_down{};
+    bool coin_down{};
+    bool start_down{};
     std::uint64_t sample_number{};
 };
 
