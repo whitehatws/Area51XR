@@ -64,7 +64,13 @@ HostTickResult XrHost::tick() {
     if(menu_open_ && trigger_pressed) {
         if(selected==VrMenuItem::resume) menu_open_=false;
         else if(selected==VrMenuItem::restart) {
-            restart_token_=next_token(restart_token_); result.restart_requested=true; menu_open_=false;
+            restart_token_=next_token(restart_token_);
+            result.restart_requested=true;
+            menu_open_=false;
+            if(show_startup_) {
+                startup_started_=true;
+                startup_started_at_=now;
+            }
         } else if(selected==VrMenuItem::quit) {
             quit_token_=next_token(quit_token_); result.quit_requested=true;
         }
