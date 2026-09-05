@@ -69,13 +69,14 @@ struct OpenXrRuntime::Impl {
     XrSystemId system{XR_NULL_SYSTEM_ID};
     XrSession session{XR_NULL_HANDLE};
     XrSpace local_space{XR_NULL_HANDLE};
-    XrSpace aim_space{XR_NULL_HANDLE};
+    std::array<XrSpace, 2> aim_spaces{};
     XrActionSet action_set{XR_NULL_HANDLE};
     XrAction aim_action{XR_NULL_HANDLE};
     XrAction fire_action{XR_NULL_HANDLE};
     XrAction coin_action{XR_NULL_HANDLE};
     XrAction start_action{XR_NULL_HANDLE};
-    XrPath right_hand{XR_NULL_PATH};
+    XrAction menu_action{XR_NULL_HANDLE};
+    std::array<XrPath, 2> hands{};
     XrPath touch_profile{XR_NULL_PATH};
     XrPath touch_plus_profile{XR_NULL_PATH};
     XrSwapchain quad_swapchain{XR_NULL_HANDLE};
@@ -87,6 +88,11 @@ struct OpenXrRuntime::Impl {
     bool session_running{};
     bool frame_begun{};
     bool touch_plus_enabled{};
+    std::size_t active_hand{1};
+    std::array<bool, 2> previous_trigger{};
+    std::array<bool, 2> previous_coin{};
+    std::array<bool, 2> previous_start{};
+    std::array<bool, 2> previous_menu{};
     std::uint64_t sample_number{};
     ID3D11Device* device{};
     ID3D11DeviceContext* context{};
@@ -222,31 +228,48 @@ struct OpenXrRuntime::Impl {
         return true;
     }
 
+    bool make_path(const char* value, XrPath& path) {
+        return XR_SUCCEEDED(xrStringToPath(instance, value, &path));
+    }
+
     bool suggest_bindings(
         const char* profile_path,
-        const char* fire_path,
-        bool include_cabinet_buttons,
+        const char* left_fire_path,
+        const char* right_fire_path,
+        bool include_full_controls,
         XrPath& bound_profile) {
-        XrPath profile{}, aim_path{}, fire_component{};
-        if (XR_FAILED(xrStringToPath(instance, profile_path, &profile)) ||
-            XR_FAILED(xrStringToPath(instance, "/user/hand/right/input/aim/pose", &aim_path)) ||
-            XR_FAILED(xrStringToPath(instance, fire_path, &fire_component))) {
+        XrPath profile{};
+        if (!make_path(profile_path, profile)) {
             return false;
         }
 
         std::vector<XrActionSuggestedBinding> bindings;
-        bindings.reserve(include_cabinet_buttons ? 4 : 2);
-        bindings.push_back({aim_action, aim_path});
-        bindings.push_back({fire_action, fire_component});
-
-        if (include_cabinet_buttons) {
-            XrPath start_path{}, coin_path{};
-            if (XR_FAILED(xrStringToPath(instance, "/user/hand/right/input/a/click", &start_path)) ||
-                XR_FAILED(xrStringToPath(instance, "/user/hand/right/input/b/click", &coin_path))) {
+        bindings.reserve(include_full_controls ? 10 : 4);
+        auto add = [&](XrAction action, const char* path_text) {
+            XrPath path{};
+            if (!make_path(path_text, path)) {
                 return false;
             }
-            bindings.push_back({start_action, start_path});
-            bindings.push_back({coin_action, coin_path});
+            bindings.push_back({action, path});
+            return true;
+        };
+
+        if (!add(aim_action, "/user/hand/left/input/aim/pose") ||
+            !add(aim_action, "/user/hand/right/input/aim/pose") ||
+            !add(fire_action, left_fire_path) ||
+            !add(fire_action, right_fire_path)) {
+            return false;
+        }
+
+        if (include_full_controls) {
+            if (!add(start_action, "/user/hand/left/input/x/click") ||
+                !add(start_action, "/user/hand/right/input/a/click") ||
+                !add(coin_action, "/user/hand/left/input/y/click") ||
+                !add(coin_action, "/user/hand/right/input/b/click") ||
+                !add(menu_action, "/user/hand/left/input/thumbstick/click") ||
+                !add(menu_action, "/user/hand/right/input/thumbstick/click")) {
+                return false;
+            }
         }
 
         XrInteractionProfileSuggestedBinding suggested{XR_TYPE_INTERACTION_PROFILE_SUGGESTED_BINDING};
@@ -256,8 +279,7 @@ struct OpenXrRuntime::Impl {
         if (XR_FAILED(xrSuggestInteractionProfileBindings(instance, &suggested))) {
             return false;
         }
-
-        if (include_cabinet_buttons) {
+        if (include_full_controls) {
             bound_profile = profile;
         }
         return true;
@@ -268,8 +290,8 @@ struct OpenXrRuntime::Impl {
         info.actionType = XR_ACTION_TYPE_BOOLEAN_INPUT;
         std::strncpy(info.actionName, name, XR_MAX_ACTION_NAME_SIZE - 1);
         std::strncpy(info.localizedActionName, localized_name, XR_MAX_LOCALIZED_ACTION_NAME_SIZE - 1);
-        info.countSubactionPaths = 1;
-        info.subactionPaths = &right_hand;
+        info.countSubactionPaths = static_cast<std::uint32_t>(hands.size());
+        info.subactionPaths = hands.data();
         return XR_SUCCEEDED(xrCreateAction(action_set, &info, &action));
     }
 
@@ -281,43 +303,44 @@ struct OpenXrRuntime::Impl {
             return fail("xrCreateActionSet failed");
         }
 
-        if (XR_FAILED(xrStringToPath(instance, "/user/hand/right", &right_hand))) {
-            return fail("right hand path unavailable");
+        if (!make_path("/user/hand/left", hands[0]) ||
+            !make_path("/user/hand/right", hands[1])) {
+            return fail("controller hand paths unavailable");
         }
 
         XrActionCreateInfo aim_info{XR_TYPE_ACTION_CREATE_INFO};
         aim_info.actionType = XR_ACTION_TYPE_POSE_INPUT;
         std::strncpy(aim_info.actionName, "aim_pose", XR_MAX_ACTION_NAME_SIZE - 1);
         std::strncpy(aim_info.localizedActionName, "Aim Pose", XR_MAX_LOCALIZED_ACTION_NAME_SIZE - 1);
-        aim_info.countSubactionPaths = 1;
-        aim_info.subactionPaths = &right_hand;
+        aim_info.countSubactionPaths = static_cast<std::uint32_t>(hands.size());
+        aim_info.subactionPaths = hands.data();
         if (XR_FAILED(xrCreateAction(action_set, &aim_info, &aim_action))) {
             return fail("aim action creation failed");
         }
 
-        if (!create_boolean_action("fire", "Fire", fire_action)) {
-            return fail("fire action creation failed");
-        }
-        if (!create_boolean_action("coin", "Insert Coin", coin_action)) {
-            return fail("coin action creation failed");
-        }
-        if (!create_boolean_action("start", "Start Continue", start_action)) {
-            return fail("start action creation failed");
+        if (!create_boolean_action("fire", "Fire", fire_action) ||
+            !create_boolean_action("coin", "Insert Coin", coin_action) ||
+            !create_boolean_action("start", "Start Continue", start_action) ||
+            !create_boolean_action("pause_menu", "Pause Menu", menu_action)) {
+            return fail("controller action creation failed");
         }
 
         XrPath ignored_profile{XR_NULL_PATH};
         const bool simple_ok = suggest_bindings(
             "/interaction_profiles/khr/simple_controller",
+            "/user/hand/left/input/select/click",
             "/user/hand/right/input/select/click",
             false,
             ignored_profile);
         const bool touch_ok = suggest_bindings(
             "/interaction_profiles/oculus/touch_controller",
+            "/user/hand/left/input/trigger/value",
             "/user/hand/right/input/trigger/value",
             true,
             touch_profile);
         const bool touch_plus_ok = touch_plus_enabled && suggest_bindings(
             kTouchPlusProfile,
+            "/user/hand/left/input/trigger/value",
             "/user/hand/right/input/trigger/value",
             true,
             touch_plus_profile);
@@ -328,30 +351,27 @@ struct OpenXrRuntime::Impl {
         return true;
     }
 
-    bool active_profile_has_cabinet_buttons() const {
-        if (!xrGetCurrentInteractionProfile || !session || !right_hand) {
+    bool active_profile_has_full_controls(std::size_t hand) const {
+        if (!xrGetCurrentInteractionProfile || !session || !hands[hand]) {
             return false;
         }
-
         XrInteractionProfileState profile{XR_TYPE_INTERACTION_PROFILE_STATE};
-        if (XR_FAILED(xrGetCurrentInteractionProfile(session, right_hand, &profile))) {
+        if (XR_FAILED(xrGetCurrentInteractionProfile(session, hands[hand], &profile))) {
             return false;
         }
-
         return
             (touch_profile != XR_NULL_PATH && profile.interactionProfile == touch_profile) ||
             (touch_plus_profile != XR_NULL_PATH && profile.interactionProfile == touch_plus_profile);
     }
 
-    bool read_boolean_action(XrAction action, bool& down) {
+    bool read_boolean_action(XrAction action, std::size_t hand, bool& down) {
         down = false;
         if (!action) {
             return true;
         }
-
         XrActionStateGetInfo get{XR_TYPE_ACTION_STATE_GET_INFO};
         get.action = action;
-        get.subactionPath = right_hand;
+        get.subactionPath = hands[hand];
         XrActionStateBoolean state{XR_TYPE_ACTION_STATE_BOOLEAN};
         if (XR_FAILED(xrGetActionStateBoolean(session, &get, &state))) {
             return false;
@@ -560,12 +580,14 @@ bool OpenXrRuntime::initialize() {
         return p.fail("xrAttachSessionActionSets failed");
     }
 
-    XrActionSpaceCreateInfo aim_space_info{XR_TYPE_ACTION_SPACE_CREATE_INFO};
-    aim_space_info.action = p.aim_action;
-    aim_space_info.subactionPath = p.right_hand;
-    aim_space_info.poseInActionSpace.orientation.w = 1.0f;
-    if (XR_FAILED(p.xrCreateActionSpace(p.session, &aim_space_info, &p.aim_space))) {
-        return p.fail("aim action space creation failed");
+    for (std::size_t hand = 0; hand < p.hands.size(); ++hand) {
+        XrActionSpaceCreateInfo aim_space_info{XR_TYPE_ACTION_SPACE_CREATE_INFO};
+        aim_space_info.action = p.aim_action;
+        aim_space_info.subactionPath = p.hands[hand];
+        aim_space_info.poseInActionSpace.orientation.w = 1.0f;
+        if (XR_FAILED(p.xrCreateActionSpace(p.session, &aim_space_info, &p.aim_spaces[hand]))) {
+            return p.fail("aim action space creation failed");
+        }
     }
     return true;
 }
@@ -604,40 +626,85 @@ bool OpenXrRuntime::poll(XrInputState& state) {
         return p.fail("xrSyncActions failed");
     }
 
-    XrActionStateGetInfo aim_get{XR_TYPE_ACTION_STATE_GET_INFO};
-    aim_get.action = p.aim_action;
-    aim_get.subactionPath = p.right_hand;
-    XrActionStatePose aim_state{XR_TYPE_ACTION_STATE_POSE};
-    if (XR_SUCCEEDED(p.xrGetActionStatePose(p.session, &aim_get, &aim_state)) && aim_state.isActive) {
-        XrSpaceLocation location{XR_TYPE_SPACE_LOCATION};
-        if (XR_SUCCEEDED(p.xrLocateSpace(
-                p.aim_space,
-                p.local_space,
-                p.predicted_display_time,
-                &location))) {
-            const XrSpaceLocationFlags required =
-                XR_SPACE_LOCATION_POSITION_VALID_BIT | XR_SPACE_LOCATION_ORIENTATION_VALID_BIT;
-            if ((location.locationFlags & required) == required) {
-                state.pose_valid = true;
-                state.aim = to_pose(location.pose);
+    std::array<bool, 2> pose_valid{};
+    std::array<Pose, 2> poses{};
+    std::array<bool, 2> trigger{};
+    std::array<bool, 2> coin{};
+    std::array<bool, 2> start{};
+    std::array<bool, 2> menu{};
+
+    for (std::size_t hand = 0; hand < p.hands.size(); ++hand) {
+        XrActionStateGetInfo aim_get{XR_TYPE_ACTION_STATE_GET_INFO};
+        aim_get.action = p.aim_action;
+        aim_get.subactionPath = p.hands[hand];
+        XrActionStatePose aim_state{XR_TYPE_ACTION_STATE_POSE};
+        if (XR_SUCCEEDED(p.xrGetActionStatePose(p.session, &aim_get, &aim_state)) && aim_state.isActive) {
+            XrSpaceLocation location{XR_TYPE_SPACE_LOCATION};
+            if (XR_SUCCEEDED(p.xrLocateSpace(
+                    p.aim_spaces[hand], p.local_space, p.predicted_display_time, &location))) {
+                const XrSpaceLocationFlags required =
+                    XR_SPACE_LOCATION_POSITION_VALID_BIT | XR_SPACE_LOCATION_ORIENTATION_VALID_BIT;
+                if ((location.locationFlags & required) == required) {
+                    pose_valid[hand] = true;
+                    poses[hand] = to_pose(location.pose);
+                }
+            }
+        }
+
+        if (!p.read_boolean_action(p.fire_action, hand, trigger[hand])) {
+            return p.fail("fire action state unavailable");
+        }
+        if (p.active_profile_has_full_controls(hand)) {
+            if (!p.read_boolean_action(p.coin_action, hand, coin[hand]) ||
+                !p.read_boolean_action(p.start_action, hand, start[hand]) ||
+                !p.read_boolean_action(p.menu_action, hand, menu[hand])) {
+                return p.fail("controller action state unavailable");
             }
         }
     }
 
-    if (!p.read_boolean_action(p.fire_action, state.trigger_down)) {
-        return p.fail("fire action state unavailable");
+    const bool left_activity =
+        (trigger[0] && !p.previous_trigger[0]) ||
+        (coin[0] && !p.previous_coin[0]) ||
+        (start[0] && !p.previous_start[0]) ||
+        (menu[0] && !p.previous_menu[0]);
+    const bool right_activity =
+        (trigger[1] && !p.previous_trigger[1]) ||
+        (coin[1] && !p.previous_coin[1]) ||
+        (start[1] && !p.previous_start[1]) ||
+        (menu[1] && !p.previous_menu[1]);
+    if (left_activity != right_activity) {
+        p.active_hand = left_activity ? 0u : 1u;
+    }
+    if (!pose_valid[p.active_hand] && pose_valid[1u - p.active_hand]) {
+        p.active_hand = 1u - p.active_hand;
     }
 
-    state.coin_down = false;
-    state.start_down = false;
-    if (p.active_profile_has_cabinet_buttons()) {
-        if (!p.read_boolean_action(p.coin_action, state.coin_down)) {
-            return p.fail("coin action state unavailable");
-        }
-        if (!p.read_boolean_action(p.start_action, state.start_down)) {
-            return p.fail("start action state unavailable");
-        }
-    }
+    state.left_pose_valid = pose_valid[0];
+    state.left_aim = poses[0];
+    state.left_trigger_down = trigger[0];
+    state.left_coin_down = coin[0];
+    state.left_start_down = start[0];
+    state.left_menu_down = menu[0];
+    state.right_pose_valid = pose_valid[1];
+    state.right_aim = poses[1];
+    state.right_trigger_down = trigger[1];
+    state.right_coin_down = coin[1];
+    state.right_start_down = start[1];
+    state.right_menu_down = menu[1];
+
+    state.active_hand = p.active_hand == 0 ? ControllerHand::left : ControllerHand::right;
+    state.pose_valid = pose_valid[p.active_hand];
+    state.aim = poses[p.active_hand];
+    state.trigger_down = trigger[p.active_hand];
+    state.coin_down = coin[0] || coin[1];
+    state.start_down = start[0] || start[1];
+    state.menu_down = menu[0] || menu[1];
+
+    p.previous_trigger = trigger;
+    p.previous_coin = coin;
+    p.previous_start = start;
+    p.previous_menu = menu;
     return true;
 }
 
@@ -734,7 +801,10 @@ void OpenXrRuntime::shutdown() {
     if (p.quad_swapchain && p.xrDestroySwapchain) p.xrDestroySwapchain(p.quad_swapchain);
     if (p.session_running && p.xrEndSession && p.session) p.xrEndSession(p.session);
     p.session_running = false;
-    if (p.aim_space && p.xrDestroySpace) p.xrDestroySpace(p.aim_space);
+    for (auto& space : p.aim_spaces) {
+        if (space && p.xrDestroySpace) p.xrDestroySpace(space);
+        space = XR_NULL_HANDLE;
+    }
     if (p.local_space && p.xrDestroySpace) p.xrDestroySpace(p.local_space);
     if (p.action_set && p.xrDestroyActionSet) p.xrDestroyActionSet(p.action_set);
     if (p.session && p.xrDestroySession) p.xrDestroySession(p.session);
@@ -744,7 +814,6 @@ void OpenXrRuntime::shutdown() {
     if (p.loader) FreeLibrary(p.loader);
 
     p.quad_swapchain = XR_NULL_HANDLE;
-    p.aim_space = XR_NULL_HANDLE;
     p.local_space = XR_NULL_HANDLE;
     p.action_set = XR_NULL_HANDLE;
     p.session = XR_NULL_HANDLE;

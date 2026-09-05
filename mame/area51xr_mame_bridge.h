@@ -24,7 +24,7 @@
 
 namespace area51xr_mame {
 
-constexpr std::uint32_t kProtocolVersion = 2;
+constexpr std::uint32_t kProtocolVersion = 3;
 constexpr std::size_t kFrameBufferBytes = 760u * 512u * 4u;
 
 struct GunState {
@@ -37,7 +37,10 @@ struct GunState {
     std::uint8_t offscreen;
     std::uint8_t coin;
     std::uint8_t start;
-    std::uint8_t reserved[4];
+    std::uint8_t pause;
+    std::uint8_t restart_token;
+    std::uint8_t quit_token;
+    std::uint8_t reserved;
 };
 
 struct FrameHeader {
@@ -106,6 +109,30 @@ public:
         return nullptr;
     }
 
+    template <typename Machine>
+    void apply_runtime_controls(Machine& machine)
+    {
+        const GunState* const xr = gun();
+        if (!xr)
+            return;
+
+        if (xr->pause && !machine.paused())
+            machine.pause();
+        else if (!xr->pause && machine.paused())
+            machine.resume();
+
+        if (xr->restart_token && xr->restart_token != last_restart_token_)
+        {
+            last_restart_token_ = xr->restart_token;
+            machine.schedule_hard_reset();
+        }
+        if (xr->quit_token && xr->quit_token != last_quit_token_)
+        {
+            last_quit_token_ = xr->quit_token;
+            machine.schedule_exit();
+        }
+    }
+
     template <typename Bitmap, typename Rect>
     void publish_bitmap(const Bitmap& bitmap, const Rect& requested)
     {
@@ -165,7 +192,7 @@ private:
         if (state_)
             return true;
 
-        mapping_ = OpenFileMappingW(FILE_MAP_ALL_ACCESS, FALSE, L"Local\\Area51XR_MAME_v2");
+        mapping_ = OpenFileMappingW(FILE_MAP_ALL_ACCESS, FALSE, L"Local\\Area51XR_MAME_v3");
         if (!mapping_)
             return false;
 
@@ -209,11 +236,19 @@ private:
     SharedState* state_{};
     GunState gun_snapshot_{};
     std::uint64_t frame_number_{};
+    std::uint8_t last_restart_token_{};
+    std::uint8_t last_quit_token_{};
 };
 
 inline const GunState* gun_state()
 {
     return Bridge::instance().gun();
+}
+
+template <typename Machine>
+inline void apply_runtime_controls(Machine& machine)
+{
+    Bridge::instance().apply_runtime_controls(machine);
 }
 
 template <typename Bitmap, typename Rect>

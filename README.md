@@ -8,11 +8,13 @@ The current pre-release build has been hardware-tested on Meta Quest 3 with Virt
 
 - original Area 51 gameplay running in the patched arcade emulator component
 - OpenXR VR screen presentation
-- tracked right-controller light-gun aiming
-- trigger to fire
+- identical left- and right-controller light-gun support
+- either trigger to fire
 - authentic off-screen reload by aiming outside the game screen and firing
-- Quest B to insert Coin 1
-- Quest A to Start / Continue
+- Quest Y or B to insert Coin 1
+- Quest X or A to Start / Continue
+- either thumbstick click opens the in-headset Resume / Restart / Quit menu
+- custom “FORTYDUBZ PRESENTS” startup screen
 - keyboard fallback: `5` for Coin 1 and `1` for Player 1 Start
 - MAME low-latency mode and fresher-frame sampling for reduced input/display latency
 - persistent play launcher and diagnostics

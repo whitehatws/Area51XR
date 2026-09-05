@@ -55,6 +55,27 @@ int main() {
     assert(near(shared->gun.aim_x, 0.5f));
     assert(near(shared->gun.aim_y, 0.5f));
 
+    input.menu_down = true;
+    input.trigger_down = false;
+    input.coin_down = false;
+    input.start_down = false;
+    runtime.set_state(input);
+    const auto menu = host.tick();
+    assert(menu.menu_open);
+    assert(shared->gun.pause == 1);
+    assert(shared->gun.trigger == 0);
+
+    input.menu_down = false;
+    runtime.set_state(input);
+    host.tick();
+    input.menu_down = true;
+    runtime.set_state(input);
+    const auto resumed = host.tick();
+    assert(!resumed.menu_open);
+    assert(shared->gun.pause == 0);
+    input.menu_down = false;
+    runtime.set_state(input);
+
     // A tracked ray that misses the game plane is a real off-screen gun state.
     // Pulling the trigger here is how Area 51 performs its cabinet reload.
     input.aim.position = {2.0f, 0.0f, 0.0f};

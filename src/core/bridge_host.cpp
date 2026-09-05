@@ -12,7 +12,10 @@ void write_gun_state(
     bool trigger,
     bool offscreen,
     bool coin,
-    bool start) noexcept {
+    bool start,
+    bool pause,
+    std::uint8_t restart_token,
+    std::uint8_t quit_token) noexcept {
     std::atomic_ref<std::uint64_t> sequence(shared.gun.sequence);
     sequence.fetch_add(1, std::memory_order_acq_rel);
 
@@ -23,6 +26,9 @@ void write_gun_state(
     shared.gun.offscreen = offscreen ? 1 : 0;
     shared.gun.coin = coin ? 1 : 0;
     shared.gun.start = start ? 1 : 0;
+    shared.gun.pause = pause ? 1 : 0;
+    shared.gun.restart_token = restart_token;
+    shared.gun.quit_token = quit_token;
 
     sequence.fetch_add(1, std::memory_order_release);
 }

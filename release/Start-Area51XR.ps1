@@ -339,7 +339,8 @@ try {
         "-rompath", $RomPath,
         "-window",
         "-skip_gameinfo",
-        "-lowlatency"
+        "-lowlatency",
+        "-update_in_pause"
     )
     $emulatorProcess = Start-Process -FilePath $emulatorExe -ArgumentList $emulatorArgs -PassThru `
         -WorkingDirectory (Split-Path -Parent $emulatorExe) `

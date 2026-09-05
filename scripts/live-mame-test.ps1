@@ -64,7 +64,7 @@ try {
     }
 
     Write-Host "Starting Area 51 in patched MAME..."
-    $mameArgs = @("area51", "-rompath", $RomPath, "-window", "-verbose")
+    $mameArgs = @("area51", "-rompath", $RomPath, "-window", "-update_in_pause", "-verbose")
     $mame = Start-Process -FilePath $MameExe -ArgumentList $mameArgs -PassThru `
         -WorkingDirectory (Split-Path -Parent $MameExe) `
         -RedirectStandardOutput $mameOut -RedirectStandardError $mameErr

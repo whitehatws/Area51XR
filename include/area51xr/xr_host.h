@@ -4,6 +4,7 @@
 #include "area51xr/xr_aim.h"
 #include "area51xr/xr_runtime.h"
 
+#include <chrono>
 #include <cstdint>
 #include <vector>
 
@@ -18,6 +19,10 @@ struct HostTickResult {
     bool trigger_down{};
     bool coin_down{};
     bool start_down{};
+    bool menu_open{};
+    bool startup_active{};
+    bool restart_requested{};
+    bool quit_requested{};
     bool frame_presented{};
     FrameStatus frame{};
 };
@@ -36,9 +41,18 @@ private:
     AimPlane plane_{};
     NormalizedAim last_aim_{0.5f, 0.5f};
     std::vector<std::uint8_t> frame_buffer_;
+    std::vector<std::uint8_t> ui_buffer_;
+    std::vector<std::uint8_t> startup_buffer_;
     MameFrameHeader cached_frame_{};
     std::uint64_t last_copied_frame_{};
+    std::chrono::steady_clock::time_point startup_started_at_{};
+    bool startup_started_{};
     bool has_frame_{};
+    bool menu_open_{};
+    bool last_menu_down_{};
+    bool last_trigger_down_{};
+    std::uint8_t restart_token_{};
+    std::uint8_t quit_token_{};
     bool initialized_{};
 };
 

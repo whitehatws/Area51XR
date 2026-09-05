@@ -33,6 +33,13 @@ int main() {
     initial.trigger_down = true;
     initial.coin_down = true;
     initial.start_down = true;
+    initial.menu_down = true;
+    initial.active_hand = area51xr::ControllerHand::left;
+    initial.left_pose_valid = true;
+    initial.left_trigger_down = true;
+    initial.left_coin_down = true;
+    initial.left_start_down = true;
+    initial.left_menu_down = true;
     initial.sample_number = 7;
     area51xr::SimulatedXrRuntime runtime(initial);
     assert(runtime.initialize());
@@ -45,6 +52,13 @@ int main() {
     assert(sampled.trigger_down);
     assert(sampled.coin_down);
     assert(sampled.start_down);
+    assert(sampled.menu_down);
+    assert(sampled.active_hand == area51xr::ControllerHand::left);
+    assert(sampled.left_pose_valid);
+    assert(sampled.left_trigger_down);
+    assert(sampled.left_coin_down);
+    assert(sampled.left_start_down);
+    assert(sampled.left_menu_down);
 
     const std::array<area51xr::SpatialMeshVertexView, 3> vertices{{
         {{0.0f, 0.0f, -1.0f}, 0.0f, 0.0f},

@@ -395,6 +395,7 @@ try {
         "-window",
         "-skip_gameinfo",
         "-lowlatency",
+        "-update_in_pause",
         "-verbose"
     )
     $mameProcess = Start-Process -FilePath $mameExe -ArgumentList $mameArgs -PassThru `

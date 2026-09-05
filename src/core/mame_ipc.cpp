@@ -12,7 +12,7 @@
 namespace area51xr {
 namespace {
 
-constexpr const wchar_t* kMappingName = L"Local\\Area51XR_MAME_v2";
+constexpr const wchar_t* kMappingName = L"Local\\Area51XR_MAME_v3";
 
 }  // namespace
 

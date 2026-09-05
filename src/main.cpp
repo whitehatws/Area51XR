@@ -88,6 +88,7 @@ int run_xr_bridge() {
     bool last_offscreen = false;
     bool last_coin = false;
     bool last_start = false;
+    bool last_menu_open = false;
     auto next_status_log = std::chrono::steady_clock::now();
 
     for (;;) {
@@ -101,6 +102,13 @@ int run_xr_bridge() {
             last_running = tick.session_running;
             std::cout << "xr_session=" << (last_running ? "running" : "waiting") << std::endl;
         }
+
+        if (tick.menu_open != last_menu_open) {
+            last_menu_open = tick.menu_open;
+            std::cout << "menu=" << (last_menu_open ? "open" : "closed") << std::endl;
+        }
+        if (tick.restart_requested) std::cout << "menu_action=restart" << std::endl;
+        if (tick.quit_requested) std::cout << "menu_action=quit" << std::endl;
 
         const bool new_frame = tick.frame.frame_number != 0 && tick.frame.frame_number != last_frame;
         if (new_frame) {

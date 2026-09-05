@@ -24,6 +24,11 @@ struct Pose {
     Quat orientation{};
 };
 
+enum class ControllerHand : std::uint8_t {
+    left,
+    right
+};
+
 struct XrInputState {
     bool session_running{};
     bool pose_valid{};
@@ -32,6 +37,23 @@ struct XrInputState {
     bool trigger_down{};
     bool coin_down{};
     bool start_down{};
+    bool menu_down{};
+    ControllerHand active_hand{ControllerHand::right};
+
+    bool left_pose_valid{};
+    Pose left_aim{};
+    bool left_trigger_down{};
+    bool left_coin_down{};
+    bool left_start_down{};
+    bool left_menu_down{};
+
+    bool right_pose_valid{};
+    Pose right_aim{};
+    bool right_trigger_down{};
+    bool right_coin_down{};
+    bool right_start_down{};
+    bool right_menu_down{};
+
     std::uint64_t sample_number{};
 };
 

@@ -119,9 +119,16 @@ $screenPatchedOld = @'
 	area51xr_mame::publish_bitmap(bitmap, cliprect);
 	return 0;
 '@.Replace("`r`n", "`n")
+$screenPatchedV2 = @'
+	/* render the object list */
+	copybitmap(bitmap, m_screen_bitmap, 0, 0, 0, 0, cliprect);
+	area51xr_mame::publish_bitmap(bitmap, m_screen->visible_area());
+	return 0;
+'@.Replace("`r`n", "`n")
 $screenPatched = @'
 	/* render the object list */
 	copybitmap(bitmap, m_screen_bitmap, 0, 0, 0, 0, cliprect);
+	area51xr_mame::apply_runtime_controls(machine());
 	area51xr_mame::publish_bitmap(bitmap, m_screen->visible_area());
 	return 0;
 '@.Replace("`r`n", "`n")
@@ -160,6 +167,9 @@ if ($Revert) {
     if ($text.Contains($screenPatched)) {
         $text = Replace-Required $text $screenPatched $screenOriginal "Area51XR frame hook"
     }
+    elseif ($text.Contains($screenPatchedV2)) {
+        $text = Replace-Required $text $screenPatchedV2 $screenOriginal "Area51XR v2 frame hook"
+    }
     elseif ($text.Contains($screenPatchedOld)) {
         $text = Replace-Required $text $screenPatchedOld $screenOriginal "Area51XR legacy frame hook"
     }
@@ -177,7 +187,11 @@ if ($text.Contains($gunPatchedOld)) {
     $text = Replace-Required $text $gunPatchedOld $gunPatched "Area51XR legacy gun hook"
     $upgraded = $true
 }
-if ($text.Contains($screenPatchedOld)) {
+if ($text.Contains($screenPatchedV2)) {
+    $text = Replace-Required $text $screenPatchedV2 $screenPatched "Area51XR v2 frame hook"
+    $upgraded = $true
+}
+elseif ($text.Contains($screenPatchedOld)) {
     $text = Replace-Required $text $screenPatchedOld $screenPatched "Area51XR legacy frame hook"
     $upgraded = $true
 }

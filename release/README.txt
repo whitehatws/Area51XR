@@ -40,11 +40,12 @@ Advanced runtime selection:
 CONTROLS
 --------
 
-Right controller aim       Light gun aim
-Right trigger              Fire
+Left or right aim          Light gun aim
+Either trigger             Fire / select menu item
 Aim outside screen + fire  Reload
-B                          Insert Coin
-A                          Start / Continue
+Y or B                     Insert Coin
+X or A                     Start / Continue
+Either thumbstick click    Open / close pause menu
 
 Keyboard fallback:
 

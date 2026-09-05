@@ -7,6 +7,7 @@ int area51xr_test_bridge_host();
 int area51xr_test_xr_runtime();
 int area51xr_test_xr_aim();
 int area51xr_test_xr_host();
+int area51xr_test_vr_ui();
 int area51xr_test_d3d11_mesh_renderer();
 int area51xr_test_reprojection();
 int area51xr_test_depth_stabilizer();
@@ -41,6 +42,7 @@ int main() {
         {"xr_runtime", area51xr_test_xr_runtime},
         {"xr_aim", area51xr_test_xr_aim},
         {"xr_host", area51xr_test_xr_host},
+        {"vr_ui", area51xr_test_vr_ui},
         {"d3d11_mesh_renderer", area51xr_test_d3d11_mesh_renderer},
         {"reprojection", area51xr_test_reprojection},
         {"depth_stabilizer", area51xr_test_depth_stabilizer},

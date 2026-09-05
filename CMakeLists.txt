@@ -17,6 +17,7 @@ add_library(a51xr_core
     src/xr/xr_runtime.cpp
     src/xr/xr_aim.cpp
     src/xr/xr_host.cpp
+    src/xr/vr_ui.cpp
     src/xr/d3d11_mesh_renderer.cpp
     src/reconstruction/depth_mesh.cpp
     src/reconstruction/reprojection.cpp
@@ -106,6 +107,7 @@ if(BUILD_TESTING)
         tests/xr_runtime_tests.cpp
         tests/xr_aim_tests.cpp
         tests/xr_host_tests.cpp
+        tests/vr_ui_tests.cpp
         tests/d3d11_mesh_renderer_tests.cpp
         tests/reprojection_tests.cpp
         tests/depth_stabilizer_tests.cpp
@@ -128,6 +130,7 @@ if(BUILD_TESTING)
     set_source_files_properties(tests/xr_runtime_tests.cpp PROPERTIES COMPILE_DEFINITIONS "main=area51xr_test_xr_runtime")
     set_source_files_properties(tests/xr_aim_tests.cpp PROPERTIES COMPILE_DEFINITIONS "main=area51xr_test_xr_aim")
     set_source_files_properties(tests/xr_host_tests.cpp PROPERTIES COMPILE_DEFINITIONS "main=area51xr_test_xr_host")
+    set_source_files_properties(tests/vr_ui_tests.cpp PROPERTIES COMPILE_DEFINITIONS "main=area51xr_test_vr_ui")
     set_source_files_properties(tests/d3d11_mesh_renderer_tests.cpp PROPERTIES COMPILE_DEFINITIONS "main=area51xr_test_d3d11_mesh_renderer")
     set_source_files_properties(tests/reprojection_tests.cpp PROPERTIES COMPILE_DEFINITIONS "main=area51xr_test_reprojection")
     set_source_files_properties(tests/depth_stabilizer_tests.cpp PROPERTIES COMPILE_DEFINITIONS "main=area51xr_test_depth_stabilizer")

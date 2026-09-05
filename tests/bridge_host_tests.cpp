@@ -6,7 +6,7 @@
 int main() {
     auto shared = std::make_unique<area51xr::MameSharedState>();
 
-    area51xr::write_gun_state(*shared, 0.25f, 0.75f, true, false, true, true);
+    area51xr::write_gun_state(*shared, 0.25f, 0.75f, true, false, true, true, true, 7, 9);
     assert(shared->gun.protocol_version == area51xr::kMameBridgeProtocolVersion);
     assert(shared->gun.aim_x == 0.25f);
     assert(shared->gun.aim_y == 0.75f);
@@ -14,6 +14,9 @@ int main() {
     assert(shared->gun.offscreen == 0);
     assert(shared->gun.coin == 1);
     assert(shared->gun.start == 1);
+    assert(shared->gun.pause == 1);
+    assert(shared->gun.restart_token == 7);
+    assert(shared->gun.quit_token == 9);
     assert(shared->gun.sequence == 2);
 
     area51xr::write_gun_state(*shared, -1.0f, 2.0f, false, true, false, false);
@@ -23,6 +26,9 @@ int main() {
     assert(shared->gun.offscreen == 1);
     assert(shared->gun.coin == 0);
     assert(shared->gun.start == 0);
+    assert(shared->gun.pause == 0);
+    assert(shared->gun.restart_token == 0);
+    assert(shared->gun.quit_token == 0);
     assert(shared->gun.sequence == 4);
 
     shared->frame.protocol_version = area51xr::kMameBridgeProtocolVersion;
