@@ -47,6 +47,7 @@ private:
     std::uint64_t last_copied_frame_{};
     std::chrono::steady_clock::time_point startup_started_at_{};
     bool startup_started_{};
+    bool startup_rendered_{};
     bool has_frame_{};
     bool menu_open_{};
     bool last_menu_down_{};

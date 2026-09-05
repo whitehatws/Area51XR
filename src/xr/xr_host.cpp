@@ -7,7 +7,7 @@
 namespace area51xr {
 namespace {
 constexpr std::uint32_t kStartupWidth=640, kStartupHeight=360;
-constexpr auto kStartupDuration=std::chrono::milliseconds(2500);
+constexpr auto kStartupDuration=std::chrono::milliseconds(4500);
 std::uint8_t next_token(std::uint8_t value) { ++value; return value ? value : 1; }
 }
 
@@ -81,7 +81,10 @@ HostTickResult XrHost::tick() {
     if(result.session_running) {
         VideoFrameView frame{};
         if(result.startup_active) {
-            render_startup_screen(startup_buffer_,kStartupWidth,kStartupHeight,kStartupWidth*4u);
+            if(!startup_rendered_) {
+                render_startup_screen(startup_buffer_,kStartupWidth,kStartupHeight,kStartupWidth*4u);
+                startup_rendered_=true;
+            }
             frame.frame_number=input.sample_number;
             frame.width=kStartupWidth; frame.height=kStartupHeight;
             frame.stride_bytes=kStartupWidth*4u; frame.pixel_format=1;

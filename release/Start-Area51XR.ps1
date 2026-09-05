@@ -334,6 +334,26 @@ try {
     Add-Content -Path $runtimeLog -Value "Selected manifest=$($selectedRuntime.Manifest)"
     Add-Content -Path $runtimeLog -Value "Selected library=$($selectedRuntime.Library)"
 
+    Write-Host "Showing FORTYDUBZ PRESENTS startup screen..."
+    $splashDeadline = (Get-Date).AddSeconds(12)
+    $splashComplete = $false
+    while ((Get-Date) -lt $splashDeadline) {
+        Start-Sleep -Milliseconds 100
+        if ($hostProcess.HasExited) {
+            $errorText = if (Test-Path $hostErr) { Get-Content -Raw $hostErr -ErrorAction SilentlyContinue } else { "" }
+            throw "Area51XR host exited during the startup screen. $errorText"
+        }
+        $hostText = if (Test-Path $hostOut) { Get-Content -Raw $hostOut -ErrorAction SilentlyContinue } else { "" }
+        if ($hostText -match "startup=complete") {
+            $splashComplete = $true
+            break
+        }
+    }
+    if (-not $splashComplete) {
+        throw "FORTYDUBZ PRESENTS startup screen did not complete. Keep the headset connected and active, then try again. Logs: $logDir"
+    }
+    Write-Host "FORTYDUBZ PRESENTS startup screen completed."
+
     $emulatorArgs = @(
         "area51",
         "-rompath", $RomPath,
@@ -349,10 +369,11 @@ try {
     Write-Host ""
     Write-Host "AREA51XR STARTED" -ForegroundColor Green
     Write-Host "Runtime: $($selectedRuntime.Name)"
-    Write-Host "Trigger: fire"
+    Write-Host "Either trigger: fire / select menu item"
     Write-Host "Aim outside screen + trigger: reload"
-    Write-Host "B: insert coin"
-    Write-Host "A: start / continue"
+    Write-Host "Y or B: insert coin"
+    Write-Host "X or A: start / continue"
+    Write-Host "Either thumbstick click: pause menu"
     Write-Host ""
     Write-Host "Close the game window to exit."
 

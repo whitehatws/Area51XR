@@ -388,7 +388,27 @@ try {
     Add-Content -Path $runtimeLog -Value "Selected manifest=$($selectedRuntime.Manifest)"
     Add-Content -Path $runtimeLog -Value "Selected library=$($selectedRuntime.Library)"
 
-    Write-Host "Starting Area 51 in patched MAME only after OpenXR initialized..."
+    Write-Host "Showing FORTYDUBZ PRESENTS startup screen..."
+    $splashDeadline = (Get-Date).AddSeconds(12)
+    $splashComplete = $false
+    while ((Get-Date) -lt $splashDeadline) {
+        Start-Sleep -Milliseconds 100
+        if ($hostProcess.HasExited) {
+            $errorText = if (Test-Path $hostErr) { Get-Content -Raw $hostErr -ErrorAction SilentlyContinue } else { "" }
+            throw "Area51XR host exited during the startup screen. $errorText"
+        }
+        $hostText = if (Test-Path $hostOut) { Get-Content -Raw $hostOut -ErrorAction SilentlyContinue } else { "" }
+        if ($hostText -match "startup=complete") {
+            $splashComplete = $true
+            break
+        }
+    }
+    if (-not $splashComplete) {
+        throw "FORTYDUBZ PRESENTS startup screen did not complete. Keep the headset connected and active, then try again. Logs: $logDir"
+    }
+    Write-Host "FORTYDUBZ PRESENTS startup screen completed."
+
+    Write-Host "Starting Area 51 in patched MAME after the startup screen..."
     $mameArgs = @(
         "area51",
         "-rompath", $mediaPath,
@@ -406,9 +426,9 @@ try {
     Write-Host "AREA51XR PLAY MODE STARTED"
     Write-Host "OpenXR runtime: $($selectedRuntime.Name)"
     Write-Host "MAME low-latency mode: enabled"
-    Write-Host "Right controller: aim + trigger. Point outside the game screen and pull trigger to reload."
-    Write-Host "Quest B: insert coin"
-    Write-Host "Quest A: start / continue"
+    Write-Host "Left or right controller: aim + trigger. Point outside the game screen and pull trigger to reload."
+    Write-Host "Quest Y or B: insert coin"
+    Write-Host "Quest X or A: start / continue"
     Write-Host "Keyboard fallback: 5 = coin, 1 = Player 1 start."
     Write-Host "Leave this PowerShell window open while playing."
     Write-Host "Press Ctrl+C here, or exit MAME, to stop the session."

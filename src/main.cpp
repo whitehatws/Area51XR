@@ -89,6 +89,8 @@ int run_xr_bridge() {
     bool last_coin = false;
     bool last_start = false;
     bool last_menu_open = false;
+    bool startup_seen = false;
+    bool startup_complete = false;
     auto next_status_log = std::chrono::steady_clock::now();
 
     for (;;) {
@@ -101,6 +103,14 @@ int run_xr_bridge() {
         if (tick.session_running != last_running) {
             last_running = tick.session_running;
             std::cout << "xr_session=" << (last_running ? "running" : "waiting") << std::endl;
+        }
+
+        if (tick.startup_active && !startup_seen) {
+            startup_seen = true;
+            std::cout << "startup=visible" << std::endl;
+        } else if (startup_seen && !tick.startup_active && !startup_complete) {
+            startup_complete = true;
+            std::cout << "startup=complete" << std::endl;
         }
 
         if (tick.menu_open != last_menu_open) {
