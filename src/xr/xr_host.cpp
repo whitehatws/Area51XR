@@ -11,9 +11,17 @@ constexpr auto kStartupDuration=std::chrono::milliseconds(4500);
 std::uint8_t next_token(std::uint8_t value) { ++value; return value ? value : 1; }
 }
 
-XrHost::XrHost(XrRuntime& runtime, MameSharedState& shared, AimPlane plane)
-    : runtime_(runtime), shared_(shared), plane_(plane), frame_buffer_(kMameFrameBufferBytes),
-      startup_buffer_(static_cast<std::size_t>(kStartupWidth)*kStartupHeight*4u) {}
+XrHost::XrHost(
+    XrRuntime& runtime,
+    MameSharedState& shared,
+    AimPlane plane,
+    bool show_startup)
+    : runtime_(runtime),
+      shared_(shared),
+      plane_(plane),
+      frame_buffer_(kMameFrameBufferBytes),
+      startup_buffer_(static_cast<std::size_t>(kStartupWidth)*kStartupHeight*4u),
+      show_startup_(show_startup) {}
 
 bool XrHost::initialize() { initialized_=runtime_.initialize(); return initialized_; }
 
@@ -30,7 +38,7 @@ HostTickResult XrHost::tick() {
     result.start_down=input.start_down;
 
     const auto now=std::chrono::steady_clock::now();
-    if(input.session_running && !startup_started_) {
+    if(show_startup_ && input.session_running && !startup_started_) {
         startup_started_=true;
         startup_started_at_=now;
     }

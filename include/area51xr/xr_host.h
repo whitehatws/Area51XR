@@ -29,7 +29,11 @@ struct HostTickResult {
 
 class XrHost {
 public:
-    XrHost(XrRuntime& runtime, MameSharedState& shared, AimPlane plane = {});
+    XrHost(
+        XrRuntime& runtime,
+        MameSharedState& shared,
+        AimPlane plane = {},
+        bool show_startup = true);
 
     bool initialize();
     HostTickResult tick();
@@ -46,6 +50,7 @@ private:
     MameFrameHeader cached_frame_{};
     std::uint64_t last_copied_frame_{};
     std::chrono::steady_clock::time_point startup_started_at_{};
+    bool show_startup_{true};
     bool startup_started_{};
     bool startup_rendered_{};
     bool has_frame_{};

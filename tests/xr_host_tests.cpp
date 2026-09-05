@@ -32,7 +32,7 @@ int main() {
     input.start_down = true;
 
     area51xr::SimulatedXrRuntime runtime(input);
-    area51xr::XrHost host(runtime, *shared);
+    area51xr::XrHost host(runtime, *shared, {}, false);
     assert(host.initialize());
 
     const auto first = host.tick();
