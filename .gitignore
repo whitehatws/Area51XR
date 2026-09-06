@@ -5,6 +5,7 @@
 /external/
 /logs/
 /models/
+/artifacts/
 *.user
 *.suo
 *.log
