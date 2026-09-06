@@ -88,6 +88,19 @@ struct OpenXrRuntime::Impl {
     bool session_running{};
     bool frame_begun{};
     bool touch_plus_enabled{};
+    bool fb_passthrough_detected{};
+    bool fb_passthrough_enabled{};
+    bool htc_passthrough_detected{};
+    bool htc_passthrough_enabled{};
+    bool passthrough_requested{};
+    PassthroughState passthrough{PassthroughState::unavailable};
+#ifdef XR_FB_passthrough
+    XrPassthroughFB passthrough_handle{XR_NULL_HANDLE};
+    XrPassthroughLayerFB passthrough_layer{XR_NULL_HANDLE};
+#endif
+#ifdef XR_HTC_passthrough
+    XrPassthroughHTC htc_passthrough_handle{XR_NULL_HANDLE};
+#endif
     std::size_t active_hand{1};
     std::array<bool, 2> previous_trigger{};
     std::array<bool, 2> previous_coin{};
@@ -132,6 +145,20 @@ struct OpenXrRuntime::Impl {
     PFN_xrAcquireSwapchainImage xrAcquireSwapchainImage{};
     PFN_xrWaitSwapchainImage xrWaitSwapchainImage{};
     PFN_xrReleaseSwapchainImage xrReleaseSwapchainImage{};
+#ifdef XR_FB_passthrough
+    PFN_xrCreatePassthroughFB xrCreatePassthroughFB{};
+    PFN_xrDestroyPassthroughFB xrDestroyPassthroughFB{};
+    PFN_xrPassthroughStartFB xrPassthroughStartFB{};
+    PFN_xrPassthroughPauseFB xrPassthroughPauseFB{};
+    PFN_xrCreatePassthroughLayerFB xrCreatePassthroughLayerFB{};
+    PFN_xrDestroyPassthroughLayerFB xrDestroyPassthroughLayerFB{};
+    PFN_xrPassthroughLayerResumeFB xrPassthroughLayerResumeFB{};
+    PFN_xrPassthroughLayerPauseFB xrPassthroughLayerPauseFB{};
+#endif
+#ifdef XR_HTC_passthrough
+    PFN_xrCreatePassthroughHTC xrCreatePassthroughHTC{};
+    PFN_xrDestroyPassthroughHTC xrDestroyPassthroughHTC{};
+#endif
 
     bool fail(const char* text) {
         error = text;
@@ -172,6 +199,87 @@ struct OpenXrRuntime::Impl {
             load_proc(xrGetInstanceProcAddr, instance, "xrAcquireSwapchainImage", xrAcquireSwapchainImage) &&
             load_proc(xrGetInstanceProcAddr, instance, "xrWaitSwapchainImage", xrWaitSwapchainImage) &&
             load_proc(xrGetInstanceProcAddr, instance, "xrReleaseSwapchainImage", xrReleaseSwapchainImage);
+    }
+
+    bool create_passthrough_resources() {
+#ifdef XR_FB_passthrough
+        if (fb_passthrough_enabled) {
+            const bool loaded =
+                load_proc(xrGetInstanceProcAddr, instance, "xrCreatePassthroughFB", xrCreatePassthroughFB) &&
+                load_proc(xrGetInstanceProcAddr, instance, "xrDestroyPassthroughFB", xrDestroyPassthroughFB) &&
+                load_proc(xrGetInstanceProcAddr, instance, "xrPassthroughStartFB", xrPassthroughStartFB) &&
+                load_proc(xrGetInstanceProcAddr, instance, "xrPassthroughPauseFB", xrPassthroughPauseFB) &&
+                load_proc(xrGetInstanceProcAddr, instance, "xrCreatePassthroughLayerFB", xrCreatePassthroughLayerFB) &&
+                load_proc(xrGetInstanceProcAddr, instance, "xrDestroyPassthroughLayerFB", xrDestroyPassthroughLayerFB) &&
+                load_proc(xrGetInstanceProcAddr, instance, "xrPassthroughLayerResumeFB", xrPassthroughLayerResumeFB) &&
+                load_proc(xrGetInstanceProcAddr, instance, "xrPassthroughLayerPauseFB", xrPassthroughLayerPauseFB);
+            if (loaded) {
+                XrPassthroughCreateInfoFB passthrough_info{XR_TYPE_PASSTHROUGH_CREATE_INFO_FB};
+                if (XR_SUCCEEDED(xrCreatePassthroughFB(session, &passthrough_info, &passthrough_handle))) {
+                    XrPassthroughLayerCreateInfoFB layer_info{XR_TYPE_PASSTHROUGH_LAYER_CREATE_INFO_FB};
+                    layer_info.passthrough = passthrough_handle;
+                    layer_info.purpose = XR_PASSTHROUGH_LAYER_PURPOSE_RECONSTRUCTION_FB;
+                    if (XR_SUCCEEDED(xrCreatePassthroughLayerFB(
+                            session, &layer_info, &passthrough_layer))) {
+                        passthrough = PassthroughState::off;
+                        return true;
+                    }
+                    xrDestroyPassthroughFB(passthrough_handle);
+                    passthrough_handle = XR_NULL_HANDLE;
+                }
+            }
+            fb_passthrough_enabled = false;
+        }
+#endif
+#ifdef XR_HTC_passthrough
+        if (htc_passthrough_enabled &&
+            load_proc(xrGetInstanceProcAddr, instance, "xrCreatePassthroughHTC", xrCreatePassthroughHTC) &&
+            load_proc(xrGetInstanceProcAddr, instance, "xrDestroyPassthroughHTC", xrDestroyPassthroughHTC)) {
+            XrPassthroughCreateInfoHTC info{XR_TYPE_PASSTHROUGH_CREATE_INFO_HTC};
+            info.form = XR_PASSTHROUGH_FORM_PLANAR_HTC;
+            if (XR_SUCCEEDED(xrCreatePassthroughHTC(session, &info, &htc_passthrough_handle))) {
+                passthrough = PassthroughState::off;
+                return true;
+            }
+        }
+        htc_passthrough_enabled = false;
+#endif
+        return false;
+    }
+
+    bool set_passthrough(bool enabled) {
+        if (passthrough == PassthroughState::unavailable) return false;
+        passthrough_requested = enabled;
+        if (!session_running) {
+            passthrough = PassthroughState::off;
+            return true;
+        }
+#ifdef XR_FB_passthrough
+        if (fb_passthrough_enabled && passthrough_handle && passthrough_layer) {
+            if (enabled) {
+                if (XR_FAILED(xrPassthroughStartFB(passthrough_handle)) ||
+                    XR_FAILED(xrPassthroughLayerResumeFB(passthrough_layer))) {
+                    passthrough = PassthroughState::unavailable;
+                    fb_passthrough_enabled = false;
+                    return false;
+                }
+                passthrough = PassthroughState::on;
+            } else {
+                xrPassthroughLayerPauseFB(passthrough_layer);
+                xrPassthroughPauseFB(passthrough_handle);
+                passthrough = PassthroughState::off;
+            }
+            return true;
+        }
+#endif
+#ifdef XR_HTC_passthrough
+        if (htc_passthrough_enabled && htc_passthrough_handle) {
+            passthrough = enabled ? PassthroughState::on : PassthroughState::off;
+            return true;
+        }
+#endif
+        passthrough = PassthroughState::unavailable;
+        return false;
     }
 
     bool create_device(const LUID& required_luid, D3D_FEATURE_LEVEL min_feature) {
@@ -450,7 +558,18 @@ struct OpenXrRuntime::Impl {
                 return fail("xrBeginSession failed");
             }
             session_running = true;
+            if (passthrough_requested && passthrough != PassthroughState::unavailable)
+                set_passthrough(true);
         } else if (next == XR_SESSION_STATE_STOPPING && session_running) {
+#ifdef XR_FB_passthrough
+            if (passthrough == PassthroughState::on) {
+                xrPassthroughLayerPauseFB(passthrough_layer);
+                xrPassthroughPauseFB(passthrough_handle);
+                passthrough = PassthroughState::off;
+            }
+#endif
+            if (passthrough == PassthroughState::on)
+                passthrough = PassthroughState::off;
             xrEndSession(session);
             session_running = false;
             frame_begun = false;
@@ -520,12 +639,32 @@ bool OpenXrRuntime::initialize() {
     }
 
     p.touch_plus_enabled = extension_available(available_extensions, kTouchPlusExtension);
+#ifdef XR_FB_passthrough
+    p.fb_passthrough_detected = extension_available(
+        available_extensions, XR_FB_PASSTHROUGH_EXTENSION_NAME);
+    p.fb_passthrough_enabled = p.fb_passthrough_detected;
+#endif
+#ifdef XR_HTC_passthrough
+    p.htc_passthrough_detected = extension_available(
+        available_extensions, XR_HTC_PASSTHROUGH_EXTENSION_NAME);
+    p.htc_passthrough_enabled = p.htc_passthrough_detected;
+#endif
 
     std::vector<const char*> extensions;
     extensions.push_back(XR_KHR_D3D11_ENABLE_EXTENSION_NAME);
     if (p.touch_plus_enabled) {
         extensions.push_back(kTouchPlusExtension);
     }
+#ifdef XR_FB_passthrough
+    if (p.fb_passthrough_enabled) {
+        extensions.push_back(XR_FB_PASSTHROUGH_EXTENSION_NAME);
+    }
+#endif
+#ifdef XR_HTC_passthrough
+    if (p.htc_passthrough_enabled) {
+        extensions.push_back(XR_HTC_PASSTHROUGH_EXTENSION_NAME);
+    }
+#endif
 
     XrInstanceCreateInfo instance_info{XR_TYPE_INSTANCE_CREATE_INFO};
     std::strncpy(instance_info.applicationInfo.applicationName, "Area51XR", XR_MAX_APPLICATION_NAME_SIZE - 1);
@@ -562,6 +701,7 @@ bool OpenXrRuntime::initialize() {
     if (XR_FAILED(p.xrCreateSession(p.instance, &session_info, &p.session))) {
         return p.fail("xrCreateSession failed");
     }
+    p.create_passthrough_resources();
 
     XrReferenceSpaceCreateInfo space_info{XR_TYPE_REFERENCE_SPACE_CREATE_INFO};
     space_info.referenceSpaceType = XR_REFERENCE_SPACE_TYPE_LOCAL;
@@ -717,9 +857,26 @@ bool OpenXrRuntime::present(const VideoFrameView& frame) {
         return p.fail("OpenXR frame was not begun before presentation");
     }
 
-    const XrCompositionLayerBaseHeader* layers[1]{};
+    const XrCompositionLayerBaseHeader* layers[2]{};
     std::uint32_t layer_count = 0;
     XrCompositionLayerQuad quad{XR_TYPE_COMPOSITION_LAYER_QUAD};
+#ifdef XR_FB_passthrough
+    XrCompositionLayerPassthroughFB passthrough_layer{XR_TYPE_COMPOSITION_LAYER_PASSTHROUGH_FB};
+    if (p.passthrough == PassthroughState::on && p.passthrough_layer) {
+        passthrough_layer.layerHandle = p.passthrough_layer;
+        layers[layer_count++] = reinterpret_cast<const XrCompositionLayerBaseHeader*>(&passthrough_layer);
+    }
+#endif
+#ifdef XR_HTC_passthrough
+    XrCompositionLayerPassthroughHTC htc_layer{XR_TYPE_COMPOSITION_LAYER_PASSTHROUGH_HTC};
+    if (p.passthrough == PassthroughState::on && p.htc_passthrough_handle) {
+        htc_layer.space = p.local_space;
+        htc_layer.passthrough = p.htc_passthrough_handle;
+        htc_layer.color = XrPassthroughColorHTC{XR_TYPE_PASSTHROUGH_COLOR_HTC};
+        htc_layer.color.alpha = 1.0f;
+        layers[layer_count++] = reinterpret_cast<const XrCompositionLayerBaseHeader*>(&htc_layer);
+    }
+#endif
 
     if (frame.width && frame.height && !frame.pixels.empty()) {
         if (frame.pixel_format != 1 || frame.stride_bytes < frame.width * 4u) {
@@ -769,8 +926,7 @@ bool OpenXrRuntime::present(const VideoFrameView& frame) {
             kDefaultScreenWidthMeters,
             kDefaultScreenWidthMeters * static_cast<float>(frame.height) / static_cast<float>(frame.width)
         };
-        layers[0] = reinterpret_cast<const XrCompositionLayerBaseHeader*>(&quad);
-        layer_count = 1;
+        layers[layer_count++] = reinterpret_cast<const XrCompositionLayerBaseHeader*>(&quad);
     }
 
     XrFrameEndInfo end_info{XR_TYPE_FRAME_END_INFO};
@@ -786,6 +942,30 @@ bool OpenXrRuntime::present(const VideoFrameView& frame) {
     return true;
 }
 
+PassthroughState OpenXrRuntime::passthrough_state() const noexcept {
+    return impl_->passthrough;
+}
+
+const char* OpenXrRuntime::passthrough_extension() const noexcept {
+#ifdef XR_FB_passthrough
+    if (impl_->passthrough_layer) return "XR_FB_passthrough";
+#endif
+#ifdef XR_HTC_passthrough
+    if (impl_->htc_passthrough_handle) return "XR_HTC_passthrough";
+#endif
+#ifdef XR_FB_passthrough
+    if (impl_->fb_passthrough_detected) return "XR_FB_passthrough";
+#endif
+#ifdef XR_HTC_passthrough
+    if (impl_->htc_passthrough_detected) return "XR_HTC_passthrough";
+#endif
+    return "";
+}
+
+bool OpenXrRuntime::set_passthrough_enabled(bool enabled) {
+    return impl_->set_passthrough(enabled);
+}
+
 void OpenXrRuntime::shutdown() {
     if (!impl_) {
         return;
@@ -799,6 +979,20 @@ void OpenXrRuntime::shutdown() {
     }
     p.frame_begun = false;
     if (p.quad_swapchain && p.xrDestroySwapchain) p.xrDestroySwapchain(p.quad_swapchain);
+#ifdef XR_FB_passthrough
+    if (p.passthrough == PassthroughState::on) p.set_passthrough(false);
+    if (p.passthrough_layer && p.xrDestroyPassthroughLayerFB)
+        p.xrDestroyPassthroughLayerFB(p.passthrough_layer);
+    if (p.passthrough_handle && p.xrDestroyPassthroughFB)
+        p.xrDestroyPassthroughFB(p.passthrough_handle);
+    p.passthrough_layer = XR_NULL_HANDLE;
+    p.passthrough_handle = XR_NULL_HANDLE;
+#endif
+#ifdef XR_HTC_passthrough
+    if (p.htc_passthrough_handle && p.xrDestroyPassthroughHTC)
+        p.xrDestroyPassthroughHTC(p.htc_passthrough_handle);
+    p.htc_passthrough_handle = XR_NULL_HANDLE;
+#endif
     if (p.session_running && p.xrEndSession && p.session) p.xrEndSession(p.session);
     p.session_running = false;
     for (auto& space : p.aim_spaces) {
@@ -821,6 +1015,11 @@ void OpenXrRuntime::shutdown() {
     p.context = nullptr;
     p.device = nullptr;
     p.loader = nullptr;
+    p.passthrough = PassthroughState::unavailable;
+    p.fb_passthrough_detected = false;
+    p.fb_passthrough_enabled = false;
+    p.htc_passthrough_detected = false;
+    p.htc_passthrough_enabled = false;
 }
 
 const char* OpenXrRuntime::last_error() const noexcept {

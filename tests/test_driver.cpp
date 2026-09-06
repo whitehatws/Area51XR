@@ -4,6 +4,7 @@ int area51xr_test_projection();
 int area51xr_test_mame_bridge();
 int area51xr_test_mame_adapter();
 int area51xr_test_bridge_host();
+int area51xr_test_player_settings();
 int area51xr_test_xr_runtime();
 int area51xr_test_xr_aim();
 int area51xr_test_xr_host();
@@ -39,6 +40,7 @@ int main() {
         {"mame_bridge", area51xr_test_mame_bridge},
         {"mame_adapter", area51xr_test_mame_adapter},
         {"bridge_host", area51xr_test_bridge_host},
+        {"player_settings", area51xr_test_player_settings},
         {"xr_runtime", area51xr_test_xr_runtime},
         {"xr_aim", area51xr_test_xr_aim},
         {"xr_host", area51xr_test_xr_host},

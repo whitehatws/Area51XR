@@ -42,6 +42,7 @@ int main() {
     initial.left_menu_down = true;
     initial.sample_number = 7;
     area51xr::SimulatedXrRuntime runtime(initial);
+    assert(runtime.passthrough_state() == area51xr::PassthroughState::unavailable);
     assert(runtime.initialize());
 
     area51xr::XrInputState sampled{};
@@ -59,6 +60,22 @@ int main() {
     assert(sampled.left_coin_down);
     assert(sampled.left_start_down);
     assert(sampled.left_menu_down);
+
+    runtime.set_passthrough_supported(true);
+    assert(runtime.passthrough_state() == area51xr::PassthroughState::off);
+    assert(runtime.set_passthrough_enabled(true));
+    assert(runtime.passthrough_state() == area51xr::PassthroughState::on);
+    assert(runtime.set_passthrough_enabled(false));
+    assert(runtime.passthrough_state() == area51xr::PassthroughState::off);
+
+    runtime.set_passthrough_enable_failure(true);
+    assert(!runtime.set_passthrough_enabled(true));
+    assert(runtime.passthrough_state() == area51xr::PassthroughState::unavailable);
+
+    initial.session_running = false;
+    runtime.set_state(initial);
+    assert(runtime.poll(sampled));
+    assert(!sampled.session_running);
 
     const std::array<area51xr::SpatialMeshVertexView, 3> vertices{{
         {{0.0f, 0.0f, -1.0f}, 0.0f, 0.0f},
