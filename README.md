@@ -20,6 +20,7 @@
   <img alt="Windows 10 and 11" src="https://img.shields.io/badge/Windows-10%20%7C%2011-0078D4">
   <img alt="OpenXR" src="https://img.shields.io/badge/Runtime-OpenXR-6A5ACD">
   <img alt="Quest 3 tested" src="https://img.shields.io/badge/Hardware-Quest%203-1C1E20">
+  <img alt="Version 1.0.0" src="https://img.shields.io/badge/Version-1.0.0-65FF00">
   <img alt="Game media not included" src="https://img.shields.io/badge/Game%20Media-Not%20Included-C62828">
 </p>
 
@@ -258,7 +259,7 @@ MAME is a registered trademark of Gregory Ember. Area51XR is an independent proj
 
 ## Release status
 
-The `1.0.0-rc1` Windows package has passed:
+Area51XR `1.0.0` has completed release validation:
 
 - complete Area51XR regression suite
 - Area 51 media audit
@@ -269,5 +270,8 @@ The `1.0.0-rc1` Windows package has passed:
 - pause, resume, restart, and quit validation
 - player and corresponding-source packaging
 - no-game-media packaging guard
+- clean launch from a freshly extracted player folder
+- default media-folder discovery
+- double-click launcher in automatic runtime mode
 
-The remaining release gate is a clean launch from a freshly extracted RC player folder.
+The first clean launch may report that default EEPROM values are being created. This is normal initialization of the emulator's local machine data.

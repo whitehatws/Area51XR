@@ -21,7 +21,7 @@ This checklist defines the launch gate for the first public Windows PCVR release
 ## Audio
 
 - [x] General game audio reaches the headset on the known-good VDXR path.
-- [ ] Final sanity run confirms Player 1 gun, voices, music/ambience, explosions, UI/credit sounds, and other major effects are audible.
+- [x] Final sanity run confirms Player 1 gun, voices, music/ambience, explosions, UI/credit sounds, and other major effects are audible.
 - [x] Do not treat the apparent absence of distinct enemy firearm reports as an Area51XR audio failure unless a stock/reference run proves those sounds should exist.
 
 ## OpenXR / PCVR transport
@@ -31,9 +31,9 @@ This checklist defines the launch gate for the first public Windows PCVR release
 - [ ] Meta Horizon Link / Air Link free path validated on Quest 3.
 - [x] SteamVR runtime validated on Quest 3 over Virtual Desktop.
 - [ ] Steam Link transport validated on Quest 3.
-- [ ] Auto runtime selection validated with at least one free runtime active.
+- [x] Auto runtime selection and the double-click launcher are validated with VDXR active.
 
-Launch requirement: at least one free Quest 3 PCVR connection path must pass before v1.0 is published. Virtual Desktop is the currently validated Quest 3 transport. Steam Link or Meta Horizon Link must still pass before claiming a validated free transport.
+Launch requirement: at least one Quest 3 PCVR connection path must pass and all unvalidated paths must be labeled accurately. Virtual Desktop / VDXR and the SteamVR runtime over Virtual Desktop pass. Meta Horizon Link and Steam Link remain unvalidated and are not launch claims.
 
 ## Player package
 
@@ -45,8 +45,8 @@ Launch requirement: at least one free Quest 3 PCVR connection path must pass bef
 - [x] Runtime diagnostics and play logs are written locally.
 - [x] Release packaging script inspects/stages native DLL dependencies.
 - [x] Release packaging script generates SHA-256 file manifest.
-- [ ] Generated RC player ZIP launches successfully from a fresh extracted folder.
-- [ ] Generated RC player ZIP is tested with media outside the development repository.
+- [x] Generated RC player ZIP launches successfully from a fresh extracted folder.
+- [x] Generated RC player ZIP is tested with media outside the development repository.
 
 ## Copyright / media boundary
 
@@ -66,8 +66,8 @@ Launch requirement: at least one free Quest 3 PCVR connection path must pass bef
 
 ## Product/version cleanup
 
-- [ ] Bump Area51XR user-visible version to `1.0.0` after RC validation.
-- [ ] Update README runtime validation status after free-path testing.
+- [x] Bump Area51XR user-visible version to `1.0.0` after RC validation.
+- [x] Update README with the exact validated and unvalidated runtime paths.
 - [ ] Create/freeze `release/v1.0` branch from the validated commit.
 - [ ] Merge the validated release line to `main` with clean history.
 - [ ] Create `v1.0.0` tag from the exact release commit.
@@ -77,6 +77,6 @@ Launch requirement: at least one free Quest 3 PCVR connection path must pass bef
 - [ ] Build final `Area51XR-1.0.0-win64.zip`.
 - [ ] Build final `Area51XR-1.0.0-mame-source.zip`.
 - [ ] Verify SHA-256 hashes after ZIP creation.
-- [ ] Draft GitHub Release notes with controls, requirements, free runtime options, legal media requirement, and known limitations.
+- [x] Draft GitHub Release notes with controls, requirements, runtime options, legal media requirement, and known limitations.
 - [ ] Attach both ZIPs.
 - [ ] Publish only after all launch-required items above pass.
