@@ -1,7 +1,7 @@
 AREA51XR
 ========
 
-Area51XR is a Windows PCVR compatibility layer for the 1995 Area 51 arcade game. It preserves the original game logic and light-gun behavior while presenting the game in an OpenXR headset and mapping a tracked right-hand controller to the arcade gun.
+Area51XR is a Windows PCVR compatibility layer for the 1995 Area 51 arcade game. It preserves the original game logic and light-gun behavior while presenting the game in an OpenXR headset and mapping either tracked controller to the arcade gun.
 
 QUICK START
 -----------
@@ -20,14 +20,15 @@ VR CONNECTION OPTIONS
 
 Area51XR uses OpenXR and does not require Virtual Desktop.
 
-Free PCVR paths:
+Hardware-validated Quest 3 paths:
+
+- Virtual Desktop / VDXR
+- Virtual Desktop with the SteamVR runtime
+
+Additional launcher paths that remain unvalidated:
 
 - Meta Horizon Link / Air Link
 - Steam Link + SteamVR
-
-Optional path:
-
-- Virtual Desktop / VDXR
 
 The launcher uses the currently active OpenXR runtime first in Auto mode, then checks installed compatible runtimes. The headset connection should already be active before Area51XR is launched.
 
@@ -46,6 +47,7 @@ Aim outside screen + fire  Reload
 Y or B                     Insert Coin
 X or A                     Start / Continue
 Either thumbstick click    Open / close pause menu
+Pause menu                  Resume / Restart Game / Quit Area51XR
 
 Keyboard fallback:
 

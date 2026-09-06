@@ -1,10 +1,10 @@
 # Area51XR
 
-Area51XR is a Windows PCVR compatibility layer for the 1995 *Area 51* arcade game. It preserves the original game logic and light-gun behavior while presenting the game through OpenXR and mapping a tracked right-hand VR controller to the Player 1 gun.
+Area51XR is a Windows PCVR compatibility layer for the 1995 *Area 51* arcade game. It preserves the original game logic and light-gun behavior while presenting the game through OpenXR and mapping either tracked VR controller to the Player 1 gun.
 
 ## Current playable milestone
 
-The current pre-release build has been hardware-tested on Meta Quest 3 with Virtual Desktop / VDXR and supports the full Player 1 game loop:
+The current pre-release build has been hardware-tested on Meta Quest 3 with Virtual Desktop / VDXR and with the SteamVR runtime over Virtual Desktop. It supports the full Player 1 game loop:
 
 - original Area 51 gameplay running in the patched arcade emulator component
 - OpenXR VR screen presentation
@@ -23,14 +23,14 @@ The v1.0 launch target is the stable flat-screen VR/light-gun experience above. 
 
 ## OpenXR runtime strategy
 
-Area51XR does not require a specific paid PCVR transport. Runtime selection is process-scoped and supports:
+Area51XR uses process-scoped OpenXR runtime selection and supports:
 
 - the currently active Windows OpenXR runtime
 - Meta Horizon Link / Air Link
-- SteamVR, including Quest use through Steam Link
+- SteamVR
 - Virtual Desktop / VDXR
 
-VDXR is the current hardware-tested runtime. Meta Horizon Link and SteamVR support are being validated as free v1.0 connection paths.
+Hardware-validated Quest 3 paths are Virtual Desktop / VDXR and the SteamVR runtime over Virtual Desktop. Meta Horizon Link could not be tested because the Meta PC software failed before Area51XR launched. Steam Link transport remains unvalidated.
 
 ## Development play command
 

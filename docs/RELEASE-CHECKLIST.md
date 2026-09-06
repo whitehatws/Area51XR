@@ -6,12 +6,14 @@ This checklist defines the launch gate for the first public Windows PCVR release
 
 - [x] Area 51 boots with verified user-supplied media.
 - [x] Game framebuffer is presented through OpenXR.
-- [x] Quest 3 right-controller aim tracks the Player 1 gun.
-- [x] Right trigger fires.
+- [x] Either Quest 3 controller can aim and track the Player 1 gun.
+- [x] Either trigger fires.
 - [x] Aiming outside the game screen and firing reloads.
-- [x] Quest B inserts Coin 1.
-- [x] Quest A starts and continues Player 1.
+- [x] Quest Y or B inserts Coin 1.
+- [x] Quest X or A starts and continues Player 1.
 - [x] Continue-after-death flow works without keyboard input.
+- [x] Either thumbstick click opens the in-headset Resume / Restart / Quit menu.
+- [x] Restart returns through the Fortydubz startup splash.
 - [x] Keyboard `5` and `1` remain fallback Coin/Start inputs.
 - [x] Low-latency play mode is enabled.
 - [x] Gameplay remains stable for sustained play on the known-good VDXR path.
@@ -27,10 +29,11 @@ This checklist defines the launch gate for the first public Windows PCVR release
 - [x] Virtual Desktop / VDXR hardware path validated on Quest 3.
 - [x] Launcher no longer requires VDXR and supports process-scoped runtime selection.
 - [ ] Meta Horizon Link / Air Link free path validated on Quest 3.
-- [ ] Steam Link + SteamVR free path validated on Quest 3, or documented as an additional unvalidated fallback if Meta Horizon Link passes the launch gate.
+- [x] SteamVR runtime validated on Quest 3 over Virtual Desktop.
+- [ ] Steam Link transport validated on Quest 3.
 - [ ] Auto runtime selection validated with at least one free runtime active.
 
-Launch requirement: at least one free Quest 3 PCVR connection path must pass before v1.0 is published. Virtual Desktop may remain an optional supported path.
+Launch requirement: at least one free Quest 3 PCVR connection path must pass before v1.0 is published. Virtual Desktop is the currently validated Quest 3 transport. Steam Link or Meta Horizon Link must still pass before claiming a validated free transport.
 
 ## Player package
 
