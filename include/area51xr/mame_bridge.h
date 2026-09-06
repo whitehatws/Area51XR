@@ -4,7 +4,7 @@
 
 namespace area51xr {
 
-constexpr std::uint32_t kMameBridgeProtocolVersion = 2;
+constexpr std::uint32_t kMameBridgeProtocolVersion = 3;
 
 struct MameGunState {
     std::uint32_t protocol_version{kMameBridgeProtocolVersion};
@@ -12,7 +12,13 @@ struct MameGunState {
     float aim_x{};
     float aim_y{};
     std::uint8_t trigger{};
-    std::uint8_t reserved[7]{};
+    std::uint8_t offscreen{};
+    std::uint8_t coin{};
+    std::uint8_t start{};
+    std::uint8_t pause{};
+    std::uint8_t restart_token{};
+    std::uint8_t quit_token{};
+    std::uint8_t reserved{};
 };
 
 struct MameFrameHeader {

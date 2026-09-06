@@ -15,14 +15,22 @@ $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent $PSScriptRoot
 $hostExe = Join-Path $root "build-mingw\area51xr.exe"
 
+function Test-MameMediaPath([string]$Value) {
+    if ([string]::IsNullOrWhiteSpace($Value)) { return $false }
+    foreach ($entry in ($Value -split ';')) {
+        if ([string]::IsNullOrWhiteSpace($entry) -or -not (Test-Path $entry)) { return $false }
+    }
+    return $true
+}
+
 if (-not (Test-Path $hostExe)) {
     throw "Area51XR host not found at '$hostExe'. Run smoke-test.ps1 first."
 }
 if (-not (Test-Path $MameExe)) {
     throw "Patched MAME executable not found at '$MameExe'."
 }
-if (-not (Test-Path $RomPath)) {
-    throw "ROM path not found at '$RomPath'."
+if (-not (Test-MameMediaPath $RomPath)) {
+    throw "MAME media path is invalid: $RomPath"
 }
 if ($DurationSeconds -lt 5) {
     throw "DurationSeconds must be at least 5."
@@ -42,21 +50,23 @@ if ($Fire) {
     $hostArgs += "--fire"
 }
 
-$host = $null
+$hostProcess = $null
 $mame = $null
 try {
     Write-Host "Starting Area51XR bridge..."
-    $host = Start-Process -FilePath $hostExe -ArgumentList $hostArgs -PassThru `
+    $hostProcess = Start-Process -FilePath $hostExe -ArgumentList $hostArgs -PassThru `
+        -WorkingDirectory (Split-Path -Parent $hostExe) `
         -RedirectStandardOutput $hostOut -RedirectStandardError $hostErr
 
     Start-Sleep -Milliseconds 500
-    if ($host.HasExited) {
+    if ($hostProcess.HasExited) {
         throw "Area51XR bridge exited early. See $hostErr"
     }
 
     Write-Host "Starting Area 51 in patched MAME..."
-    $mameArgs = @("area51", "-rompath", $RomPath, "-window", "-verbose")
+    $mameArgs = @("area51", "-rompath", $RomPath, "-window", "-update_in_pause", "-verbose")
     $mame = Start-Process -FilePath $MameExe -ArgumentList $mameArgs -PassThru `
+        -WorkingDirectory (Split-Path -Parent $MameExe) `
         -RedirectStandardOutput $mameOut -RedirectStandardError $mameErr
 
     $deadline = (Get-Date).AddSeconds($DurationSeconds)
@@ -69,14 +79,14 @@ try {
                 Write-Host "Bridge traffic detected: $($Matches[0])"
                 Write-Host "LIVE MAME BRIDGE TEST PASSED"
                 Write-Host "Logs: $logDir"
-                exit 0
+                return
             }
         }
 
         if ($mame.HasExited) {
             throw "MAME exited before framebuffer traffic was detected. See $mameErr"
         }
-        if ($host.HasExited) {
+        if ($hostProcess.HasExited) {
             throw "Area51XR bridge exited before framebuffer traffic was detected. See $hostErr"
         }
     }
@@ -87,7 +97,7 @@ finally {
     if ($mame -and -not $mame.HasExited) {
         Stop-Process -Id $mame.Id -Force -ErrorAction SilentlyContinue
     }
-    if ($host -and -not $host.HasExited) {
-        Stop-Process -Id $host.Id -Force -ErrorAction SilentlyContinue
+    if ($hostProcess -and -not $hostProcess.HasExited) {
+        Stop-Process -Id $hostProcess.Id -Force -ErrorAction SilentlyContinue
     }
 }

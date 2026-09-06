@@ -17,6 +17,7 @@ public:
     bool initialize() override;
     bool poll(XrInputState& state) override;
     bool present(const VideoFrameView& frame) override;
+    bool present_mesh(const SpatialMeshView& mesh) override;
     void shutdown() override;
 
     [[nodiscard]] const char* last_error() const noexcept;

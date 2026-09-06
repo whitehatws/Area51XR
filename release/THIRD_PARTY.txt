@@ -1,0 +1,26 @@
+AREA51XR THIRD-PARTY COMPONENTS
+==============================
+
+This file identifies third-party components that may be included in the Area51XR Windows player package. Their own license terms control those components.
+
+1. Modified arcade emulator component derived from MAME
+   Project: MAME
+   License: GNU General Public License version 2 or later (GPL-2.0+), with individual source files carrying compatible licenses as noted in their headers.
+   Project site: https://www.mamedev.org/
+   Source: A full corresponding-source archive for the exact modified emulator build is distributed alongside each Area51XR player release.
+   Notices and license texts: emulator\COPYING and emulator\docs\legal\
+
+2. Khronos OpenXR Loader
+   Project: OpenXR SDK / Loader
+   License: Apache License 2.0
+   Project site: https://github.com/KhronosGroup/OpenXR-SDK
+   License files copied from the build environment are included under licenses\ when available.
+
+3. GCC / MinGW runtime libraries
+   The Windows build may include runtime DLLs from the MSYS2 UCRT64 toolchain when the compiled executables import them.
+   Applicable GCC, runtime-exception, MinGW-w64, and winpthreads license files copied from the build environment are included under licenses\ when available.
+
+PCVR CONNECTION SOFTWARE
+------------------------
+
+Meta Horizon Link, SteamVR / Steam Link, and Virtual Desktop are not bundled with Area51XR. They are separately installed software used only as OpenXR/PCVR connection options and remain subject to their respective vendors' terms.

@@ -6,6 +6,14 @@ param(
 
     [string]$OpenXrSdk = "",
 
+    [string]$OnnxRuntimeDir = "",
+
+    [string]$DepthModelPath = "",
+
+    [string]$RomPath = "",
+
+    [switch]$AllowModifiedMedia,
+
     [int]$Jobs = 0
 )
 
@@ -13,89 +21,184 @@ $ErrorActionPreference = "Stop"
 
 $root = Split-Path -Parent $PSScriptRoot
 $bash = Join-Path $MsysRoot "usr\bin\bash.exe"
+$ucrtBin = Join-Path $MsysRoot "ucrt64\bin"
 $mameSource = Join-Path $MameRoot "src\mame\atari\jaguar.cpp"
+$mediaResolver = Join-Path $PSScriptRoot "resolve-mame-media.ps1"
 
 if ([string]::IsNullOrWhiteSpace($OpenXrSdk)) {
-    $OpenXrSdk = Join-Path $root "external\openxr-sdk"
+    $OpenXrSdk = Join-Path $MsysRoot "ucrt64"
+}
+if ([string]::IsNullOrWhiteSpace($OnnxRuntimeDir)) {
+    $OnnxRuntimeDir = Join-Path $root "external\onnxruntime-1.28.0"
+}
+if ([string]::IsNullOrWhiteSpace($DepthModelPath)) {
+    $DepthModelPath = Join-Path $root "models\depth_anything_v2_vits.onnx"
+}
+
+function ConvertTo-MsysPath([string]$Path) {
+    $full = [System.IO.Path]::GetFullPath($Path)
+    if ($full -match '^([A-Za-z]):\\(.*)$') {
+        $drive = $matches[1].ToLowerInvariant()
+        $tail = $matches[2] -replace '\\', '/'
+        return "/$drive/$tail"
+    }
+    return ($full -replace '\\', '/')
+}
+
+function Collect-BlockDiagnostics {
+    $diagDir = $env:A51XR_ACCEPTANCE_DIR
+    if ([string]::IsNullOrWhiteSpace($diagDir)) {
+        $diagDir = Join-Path $root "logs"
+    }
+    $diagPath = Join-Path $diagDir "windows-block-diagnostics.txt"
+    try {
+        & (Join-Path $PSScriptRoot "collect-windows-block-diagnostics.ps1") `
+            -BuildDir (Join-Path $root "build-mingw") `
+            -OutputPath $diagPath
+    }
+    catch {
+        Write-Host "Warning: failed to collect Windows block diagnostics: $_"
+    }
 }
 
 if (-not (Test-Path $bash)) {
     throw "MSYS2 bash not found at '$bash'."
 }
+if (-not (Test-Path $ucrtBin)) {
+    throw "MSYS2 UCRT64 bin directory not found at '$ucrtBin'."
+}
 if (-not (Test-Path $mameSource)) {
     throw "MAME source tree not found at '$MameRoot'."
+}
+if (-not (Test-Path $mediaResolver)) {
+    throw "MAME media resolver not found at '$mediaResolver'."
 }
 if (-not (Test-Path (Join-Path $OpenXrSdk "include\openxr\openxr.h"))) {
     throw "OpenXR SDK headers not found at '$OpenXrSdk'."
 }
-
-if ($Jobs -le 0) {
-    $Jobs = [Math]::Max(2, [Environment]::ProcessorCount)
+if (-not (Test-Path (Join-Path $OnnxRuntimeDir "build\native\include\onnxruntime_cxx_api.h"))) {
+    throw "ONNX Runtime C++ headers not found at '$OnnxRuntimeDir'."
+}
+if (-not (Test-Path (Join-Path $OnnxRuntimeDir "runtimes\win-x64\native\onnxruntime.dll"))) {
+    throw "ONNX Runtime DLL not found at '$OnnxRuntimeDir'."
+}
+if (-not (Test-Path $DepthModelPath)) {
+    throw "Depth Anything V2 Small model not found at '$DepthModelPath'."
+}
+if (-not [string]::IsNullOrWhiteSpace($RomPath) -and -not (Test-Path $RomPath)) {
+    throw "ROM path not found at '$RomPath'."
 }
 
-Write-Host "[1/6] Applying Area51XR MAME integration..."
+if (-not (($env:PATH -split ';') -contains $ucrtBin)) {
+    $env:PATH = "$ucrtBin;$env:PATH"
+}
+
+if ($Jobs -le 0) {
+    $Jobs = [Math]::Max(2, [Math]::Min(8, [Environment]::ProcessorCount))
+}
+
+Write-Host "[1/8] Applying Area51XR MAME integration..."
 & (Join-Path $PSScriptRoot "apply-mame-patch.ps1") -MameRoot $MameRoot
 
-$env:A51XR_ROOT = $root
-$env:A51XR_MAME_ROOT = $MameRoot
-$env:A51XR_OPENXR_SDK = $OpenXrSdk
+$env:A51XR_ROOT_MSYS = ConvertTo-MsysPath $root
+$env:A51XR_MAME_ROOT_MSYS = ConvertTo-MsysPath $MameRoot
+$env:A51XR_OPENXR_SDK_MSYS = ConvertTo-MsysPath $OpenXrSdk
+$env:A51XR_ONNXRUNTIME_DIR_MSYS = ConvertTo-MsysPath $OnnxRuntimeDir
 
-Write-Host "[2/6] Building Area51XR with MSYS2/UCRT and OpenXR..."
-$hostBuildCommand = @"
-export PATH=/ucrt64/bin:/usr/bin:`$PATH
-root="`$(cygpath -u "`$A51XR_ROOT")"
-sdk="`$(cygpath -u "`$A51XR_OPENXR_SDK")"
-cmake -S "`$root" -B "`$root/build-mingw" -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo -DA51XR_OPENXR_SDK="`$sdk"
-cmake --build "`$root/build-mingw" -j$Jobs
-"@
+Write-Host "[2/8] Building Area51XR with MSYS2/UCRT, OpenXR, and ONNX Runtime..."
+$hostBuildCommand = @'
+export PATH=/ucrt64/bin:/usr/bin:$PATH
+cmake -S "$A51XR_ROOT_MSYS" -B "$A51XR_ROOT_MSYS/build-mingw" -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo -DA51XR_OPENXR_SDK="$A51XR_OPENXR_SDK_MSYS" -DA51XR_ONNXRUNTIME_DIR="$A51XR_ONNXRUNTIME_DIR_MSYS"
+cmake --build "$A51XR_ROOT_MSYS/build-mingw" --parallel
+'@
 & $bash -lc $hostBuildCommand
 if ($LASTEXITCODE -ne 0) {
     throw "Area51XR build failed with exit code $LASTEXITCODE."
 }
 
-Write-Host "[3/6] Running Area51XR tests..."
-$hostTestCommand = @"
-export PATH=/ucrt64/bin:/usr/bin:`$PATH
-root="`$(cygpath -u "`$A51XR_ROOT")"
-ctest --test-dir "`$root/build-mingw" --output-on-failure
-"@
-& $bash -lc $hostTestCommand
+Write-Host "[3/8] Running Area51XR regression tests..."
+$regressionExe = Join-Path $root "build-mingw\area51xr_tests.exe"
+if (-not (Test-Path $regressionExe)) {
+    throw "Area51XR regression executable was not built: $regressionExe"
+}
+$testExit = 1
+try {
+    & $regressionExe
+    $testExit = $LASTEXITCODE
+}
+catch {
+    Write-Host "Regression executable could not be launched: $_"
+    $testExit = 1
+}
+if ($testExit -ne 0) {
+    Collect-BlockDiagnostics
+    throw "Area51XR tests failed with exit code $testExit."
+}
+
+Write-Host "[4/8] Running synthetic reconstruction self-test..."
+& (Join-Path $PSScriptRoot "reconstruction-selftest.ps1")
 if ($LASTEXITCODE -ne 0) {
-    throw "Area51XR tests failed with exit code $LASTEXITCODE."
+    throw "Synthetic reconstruction self-test failed with exit code $LASTEXITCODE."
 }
 
-Write-Host "[4/6] Building Khronos OpenXR loader DLL..."
-$loaderBuildCommand = @"
-export PATH=/ucrt64/bin:/usr/bin:`$PATH
-root="`$(cygpath -u "`$A51XR_ROOT")"
-sdk="`$(cygpath -u "`$A51XR_OPENXR_SDK")"
-cmake -S "`$sdk" -B "`$root/external/openxr-build" -G Ninja -DCMAKE_BUILD_TYPE=Release -DDYNAMIC_LOADER=ON -DBUILD_TESTING=OFF
-cmake --build "`$root/external/openxr-build" --target openxr_loader -j$Jobs
-"@
-& $bash -lc $loaderBuildCommand
+Write-Host "[5/8] Running Depth Anything V2 ONNX self-test..."
+$depthSelfTest = Join-Path $root "build-mingw\area51xr-depth-selftest.exe"
+if (-not (Test-Path $depthSelfTest)) {
+    throw "Depth model self-test executable was not built."
+}
+& $depthSelfTest $DepthModelPath
 if ($LASTEXITCODE -ne 0) {
-    throw "OpenXR loader build failed with exit code $LASTEXITCODE."
+    throw "Depth model self-test failed with exit code $LASTEXITCODE."
 }
 
-$loaderDll = Get-ChildItem -Path (Join-Path $root "external\openxr-build") -Filter "openxr_loader.dll" -File -Recurse -ErrorAction SilentlyContinue |
-    Select-Object -First 1 -ExpandProperty FullName
-if (-not $loaderDll) {
-    throw "OpenXR loader build completed but openxr_loader.dll was not found."
+Write-Host "[6/8] Staging packaged OpenXR loader DLL..."
+$packagedLoader = Join-Path $ucrtBin "libopenxr_loader.dll"
+if (-not (Test-Path $packagedLoader)) {
+    throw "MSYS2 OpenXR loader not found at '$packagedLoader'."
 }
-Copy-Item $loaderDll (Join-Path $root "build-mingw\openxr_loader.dll") -Force
+$loaderDll = Join-Path $root "build-mingw\openxr_loader.dll"
+Copy-Item $packagedLoader $loaderDll -Force
 
-Write-Host "[5/6] Building targeted MAME CoJag subtarget..."
-$mameBuildCommand = @"
-export PATH=/ucrt64/bin:/usr/bin:`$PATH
-cd "`$(cygpath -u "`$A51XR_MAME_ROOT")"
-make SUBTARGET=area51xr SOURCES=src/mame/atari/jaguar.cpp REGENIE=1 -j$Jobs
-"@
+Write-Host "[7/8] Building targeted MAME CoJag subtarget with $Jobs jobs..."
+$env:A51XR_MAME_JOBS = [string]$Jobs
+$mameBuildCommand = @'
+export OS=Windows_NT
+export MSYSTEM=UCRT64
+export MINGW_PREFIX=/ucrt64
+export MINGW_CHOST=x86_64-w64-mingw32
+export MINGW_PACKAGE_PREFIX=mingw-w64-ucrt-x86_64
+export PATH=/ucrt64/bin:/usr/bin:$PATH
+printf 'MAME toolchain: MSYSTEM=%s MINGW_PREFIX=%s\n' "$MSYSTEM" "$MINGW_PREFIX"
+cd "$A51XR_MAME_ROOT_MSYS"
+
+PROJECT_MAKEFILE="build/projects/windows/mamearea51xr/gmake-mingw64-gcc/Makefile"
+if [ -f "$PROJECT_MAKEFILE" ]; then
+    echo "Using existing generated MAME project files for incremental build."
+    make SUBTARGET=area51xr SOURCES=src/mame/atari/jaguar.cpp -j"$A51XR_MAME_JOBS"
+else
+    echo "Generated MAME project files are missing; repairing genie before regeneration."
+    GENIE="3rdparty/genie/bin/windows/genie.exe"
+    if [ -f "$GENIE" ]; then
+        chmod +x "$GENIE" 2>/dev/null || true
+    fi
+    if ! "$GENIE" --help >/dev/null 2>&1; then
+        rm -f "$GENIE"
+        make -C 3rdparty/genie PROJECT_TYPE=gmake -j"$A51XR_MAME_JOBS"
+        chmod +x "$GENIE" 2>/dev/null || true
+    fi
+    if ! "$GENIE" --help >/dev/null 2>&1; then
+        echo "ERROR: MAME genie generator is still not runnable after local rebuild." >&2
+        exit 126
+    fi
+    make SUBTARGET=area51xr SOURCES=src/mame/atari/jaguar.cpp REGENIE=1 -j"$A51XR_MAME_JOBS"
+fi
+'@
 & $bash -lc $mameBuildCommand
 if ($LASTEXITCODE -ne 0) {
     throw "MAME build failed with exit code $LASTEXITCODE."
 }
 
-Write-Host "[6/6] Locating and validating the MAME executable..."
+Write-Host "[8/8] Locating and validating the MAME executable..."
 $candidates = @(
     (Join-Path $MameRoot "mamearea51xr.exe"),
     (Join-Path $MameRoot "area51xr.exe")
@@ -114,13 +217,97 @@ if ($LASTEXITCODE -ne 0) {
     throw "The patched MAME executable could not enumerate Area 51."
 }
 
+if (-not [string]::IsNullOrWhiteSpace($RomPath)) {
+    $resolvedOutput = @(& $mediaResolver -RomPath $RomPath)
+    $mameMediaPath = $env:A51XR_MAME_MEDIA_PATH
+    if ([string]::IsNullOrWhiteSpace($mameMediaPath) -and $resolvedOutput.Count -gt 0) {
+        $mameMediaPath = [string]$resolvedOutput[$resolvedOutput.Count - 1]
+    }
+    if ([string]::IsNullOrWhiteSpace($mameMediaPath)) {
+        throw "Unable to resolve a MAME media path from '$RomPath'."
+    }
+    Write-Host "MAME media path: $mameMediaPath"
+
+    $romFound = $false
+    $looseRomFound = $false
+    $chdFound = $false
+    foreach ($mediaRoot in ($mameMediaPath -split ';')) {
+        $romCandidate = Join-Path $mediaRoot "area51.zip"
+        $looseRomCandidate = Join-Path $mediaRoot "area51\2-c_area_51_hh.hh"
+        $chdCandidate = Join-Path $mediaRoot "area51\area51.chd"
+        $romHere = Test-Path $romCandidate
+        $looseRomHere = Test-Path $looseRomCandidate
+        $chdHere = Test-Path $chdCandidate
+        if ($romHere) { $romFound = $true }
+        if ($looseRomHere) { $looseRomFound = $true }
+        if ($chdHere) { $chdFound = $true }
+        Write-Host "Area 51 ROM archive candidate: $romCandidate = $romHere"
+        Write-Host "Area 51 loose ROM candidate: $looseRomCandidate = $looseRomHere"
+        Write-Host "Area 51 CHD candidate: $chdCandidate = $chdHere"
+    }
+    if (-not $romFound -and -not $looseRomFound) {
+        throw "Area 51 board ROM set was not found in the resolved MAME media path '$mameMediaPath'."
+    }
+    if (-not $chdFound) {
+        throw "Area 51 CHD area51\area51.chd was not found in the resolved MAME media path '$mameMediaPath'."
+    }
+
+    $diagDir = $env:A51XR_ACCEPTANCE_DIR
+    if ([string]::IsNullOrWhiteSpace($diagDir)) {
+        $diagDir = Join-Path $root "logs"
+    }
+    New-Item -ItemType Directory -Force -Path $diagDir | Out-Null
+    $verifyOut = Join-Path $diagDir "mame-verify-area51.out.txt"
+    $verifyErr = Join-Path $diagDir "mame-verify-area51.err.txt"
+
+    Write-Host "Verifying Area 51 ROM/CHD set with MAME..."
+    $verify = Start-Process -FilePath $mameExe `
+        -ArgumentList @("-rompath", $mameMediaPath, "-verifyroms", "area51") `
+        -WorkingDirectory (Split-Path -Parent $mameExe) `
+        -PassThru -Wait -NoNewWindow `
+        -RedirectStandardOutput $verifyOut -RedirectStandardError $verifyErr
+
+    if (Test-Path $verifyOut) { Get-Content $verifyOut | Write-Host }
+    if (Test-Path $verifyErr) { Get-Content $verifyErr | Write-Host }
+
+    if ($verify.ExitCode -ne 0) {
+        $audit = @()
+        if (Test-Path $verifyOut) { $audit += Get-Content $verifyOut }
+        if (Test-Path $verifyErr) { $audit += Get-Content $verifyErr }
+        if ($AllowModifiedMedia) {
+            $missingLines = @($audit | Where-Object {
+                $_ -match '(?i)\bNOT FOUND\b|required files are missing|not found in (the )?rompath|is missing|missing required'
+            })
+            if ($missingLines.Count -gt 0) {
+                throw "MAME reports required Area 51 media as missing. Modified-media mode only permits intentional checksum/length differences."
+            }
+            Write-Warning "MAME's stock Area 51 audit reported a mismatch, but -AllowModifiedMedia is enabled and no required files are missing. Continuing with runtime validation."
+        }
+        else {
+            $missingHint = ""
+            if ($audit -match "NOT FOUND|missing|incorrect|wrong length|wrong checksum") {
+                $missingHint = " MAME reported missing or mismatched media in the audit above."
+            }
+            throw "MAME could not verify Area 51 using media path '$mameMediaPath'.$missingHint Full audit is saved in the acceptance diagnostics. If this is an intentional project-modified dump, rerun acceptance with -AllowModifiedMedia."
+        }
+    }
+
+    $env:A51XR_MAME_MEDIA_PATH = $mameMediaPath
+}
+
 $hostExe = Join-Path $root "build-mingw\area51xr.exe"
 if (-not (Test-Path $hostExe)) {
     throw "Area51XR host was not found at '$hostExe'."
+}
+$ortDll = Join-Path $root "build-mingw\onnxruntime.dll"
+if (-not (Test-Path $ortDll)) {
+    throw "Area51XR build completed without the expected onnxruntime.dll."
 }
 
 Write-Host ""
 Write-Host "Smoke test passed."
 Write-Host "Area51XR host:  $hostExe"
 Write-Host "Patched MAME:  $mameExe"
-Write-Host "OpenXR loader: $(Join-Path $root 'build-mingw\openxr_loader.dll')"
+Write-Host "Depth model:   $DepthModelPath"
+Write-Host "OpenXR loader: $loaderDll"
+Write-Host "ONNX Runtime:  $ortDll"

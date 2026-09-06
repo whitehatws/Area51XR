@@ -1,8 +1,20 @@
+// license:GPL-2.0+
 #pragma once
 
 #ifdef _WIN32
+#ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
+#endif
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
 #include <windows.h>
+#ifdef ERROR
+#undef ERROR
+#endif
+#ifdef EXCEPTION_ILLEGAL_INSTRUCTION
+#undef EXCEPTION_ILLEGAL_INSTRUCTION
+#endif
 #endif
 
 #include <algorithm>
@@ -12,7 +24,7 @@
 
 namespace area51xr_mame {
 
-constexpr std::uint32_t kProtocolVersion = 2;
+constexpr std::uint32_t kProtocolVersion = 3;
 constexpr std::size_t kFrameBufferBytes = 760u * 512u * 4u;
 
 struct GunState {
@@ -22,7 +34,13 @@ struct GunState {
     float aim_x;
     float aim_y;
     std::uint8_t trigger;
-    std::uint8_t reserved[7];
+    std::uint8_t offscreen;
+    std::uint8_t coin;
+    std::uint8_t start;
+    std::uint8_t pause;
+    std::uint8_t restart_token;
+    std::uint8_t quit_token;
+    std::uint8_t reserved;
 };
 
 struct FrameHeader {
@@ -91,17 +109,51 @@ public:
         return nullptr;
     }
 
+    template <typename Machine>
+    void apply_runtime_controls(Machine& machine)
+    {
+        const GunState* const xr = gun();
+        if (!xr)
+            return;
+
+        if (xr->pause && !machine.paused())
+            machine.pause();
+        else if (!xr->pause && machine.paused())
+            machine.resume();
+
+        if (xr->restart_token && xr->restart_token != last_restart_token_)
+        {
+            last_restart_token_ = xr->restart_token;
+            machine.schedule_hard_reset();
+        }
+        if (xr->quit_token && xr->quit_token != last_quit_token_)
+        {
+            last_quit_token_ = xr->quit_token;
+            machine.schedule_exit();
+        }
+    }
+
     template <typename Bitmap, typename Rect>
-    void publish_bitmap(const Bitmap& bitmap, const Rect& visible)
+    void publish_bitmap(const Bitmap& bitmap, const Rect& requested)
     {
         if (!ensure_open())
             return;
 
-        const std::uint32_t width = static_cast<std::uint32_t>(visible.width());
-        const std::uint32_t height = static_cast<std::uint32_t>(visible.height());
+        if (bitmap.width() <= 0 || bitmap.height() <= 0)
+            return;
+
+        const int left = std::max(0, requested.left());
+        const int top = std::max(0, requested.top());
+        const int right = std::min(bitmap.width() - 1, requested.right());
+        const int bottom = std::min(bitmap.height() - 1, requested.bottom());
+        if (right < left || bottom < top)
+            return;
+
+        const std::uint32_t width = static_cast<std::uint32_t>(right - left + 1);
+        const std::uint32_t height = static_cast<std::uint32_t>(bottom - top + 1);
         const std::size_t row_bytes = static_cast<std::size_t>(width) * sizeof(std::uint32_t);
         const std::size_t payload_bytes = row_bytes * height;
-        if (payload_bytes > kFrameBufferBytes)
+        if (payload_bytes == 0 || payload_bytes > kFrameBufferBytes)
             return;
 
 #ifdef _WIN32
@@ -116,10 +168,9 @@ public:
         state_->frame.presentation_time_ns = 0;
         state_->frame.payload_bytes = payload_bytes;
 
-        const int left = visible.left();
         for (std::uint32_t row = 0; row < height; ++row)
         {
-            const int y = visible.top() + static_cast<int>(row);
+            const int y = top + static_cast<int>(row);
             std::memcpy(
                 state_->frame_pixels + static_cast<std::size_t>(row) * row_bytes,
                 &bitmap.pix(y, left),
@@ -127,6 +178,7 @@ public:
         }
 
 #ifdef _WIN32
+        MemoryBarrier();
         InterlockedIncrement64(reinterpret_cast<volatile LONG64*>(&state_->frame.sequence));
 #endif
     }
@@ -140,7 +192,7 @@ private:
         if (state_)
             return true;
 
-        mapping_ = OpenFileMappingW(FILE_MAP_ALL_ACCESS, FALSE, L"Local\\Area51XR_MAME_v2");
+        mapping_ = OpenFileMappingW(FILE_MAP_ALL_ACCESS, FALSE, L"Local\\Area51XR_MAME_v3");
         if (!mapping_)
             return false;
 
@@ -184,11 +236,19 @@ private:
     SharedState* state_{};
     GunState gun_snapshot_{};
     std::uint64_t frame_number_{};
+    std::uint8_t last_restart_token_{};
+    std::uint8_t last_quit_token_{};
 };
 
 inline const GunState* gun_state()
 {
     return Bridge::instance().gun();
+}
+
+template <typename Machine>
+inline void apply_runtime_controls(Machine& machine)
+{
+    Bridge::instance().apply_runtime_controls(machine);
 }
 
 template <typename Bitmap, typename Rect>
@@ -201,6 +261,20 @@ inline std::uint8_t normalized_to_mame_axis(float value)
 {
     const float clamped = std::clamp(value, 0.0f, 1.0f);
     return static_cast<std::uint8_t>(clamped * 255.0f + 0.5f);
+}
+
+inline std::uint16_t apply_system_input(std::uint16_t input)
+{
+    if (const auto* const xr = gun_state(); xr && xr->coin)
+        input &= ~std::uint16_t(0x0001);
+    return input;
+}
+
+inline std::uint32_t apply_p1_p2_input(std::uint32_t input)
+{
+    if (const auto* const xr = gun_state(); xr && xr->start)
+        input &= ~std::uint32_t(0x01000000);
+    return input;
 }
 
 } // namespace area51xr_mame

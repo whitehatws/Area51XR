@@ -12,7 +12,7 @@
 namespace area51xr {
 namespace {
 
-constexpr const wchar_t* kMappingName = L"Local\\Area51XR_MAME_v2";
+constexpr const wchar_t* kMappingName = L"Local\\Area51XR_MAME_v3";
 
 }  // namespace
 
@@ -68,7 +68,11 @@ bool MameIpc::open() {
 
     mapping_ = mapping;
     state_ = static_cast<MameSharedState*>(view);
-    return state_->protocol_version == kMameBridgeProtocolVersion;
+    if (state_->protocol_version != kMameBridgeProtocolVersion) {
+        close();
+        return false;
+    }
+    return true;
 #else
     return false;
 #endif
