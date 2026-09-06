@@ -20,3 +20,9 @@ captures/
 *.obj
 *.quality.json
 *.jsonl
+*.nv
+*.dif
+settings-v*.ini
+migration-v*.complete
+media-staging-*/
+Backups/

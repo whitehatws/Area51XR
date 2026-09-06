@@ -1,5 +1,5 @@
 param(
-    [string]$Version = "1.0.0",
+    [string]$Version = "1.1.0-rc1",
     [string]$MameRoot = "",
     [string]$MsysRoot = "C:\msys64",
     [string]$OutputDir = "",
@@ -43,6 +43,10 @@ $area51xrCommit = (& git -C $root rev-parse HEAD).Trim()
 $mameCommit = (& git -C $MameRoot rev-parse HEAD).Trim()
 if ([string]::IsNullOrWhiteSpace($area51xrCommit) -or [string]::IsNullOrWhiteSpace($mameCommit)) {
     throw "Unable to resolve source revisions for release packaging."
+}
+$requiredMameCommit = "06516a9dc07f68e21092340f04e1a6f6d6a58260"
+if ($mameCommit -ne $requiredMameCommit) {
+    throw "Release packaging requires validated MAME revision $requiredMameCommit, but the source tree is at $mameCommit."
 }
 
 $area51xrStatus = @(& git -C $root status --porcelain)
@@ -170,7 +174,9 @@ $bannedNames = @(
     'jagwave.rom'
 )
 $forbidden = @(Get-ChildItem -Path $stage -Recurse -File | Where-Object {
-    $_.Extension -ieq '.chd' -or $bannedNames -contains $_.Name.ToLowerInvariant()
+    $_.Extension -in @('.chd','.nv','.dif') -or
+    $_.Name -like 'settings-v*.ini' -or
+    $bannedNames -contains $_.Name.ToLowerInvariant()
 })
 if ($forbidden.Count -gt 0) {
     $names = ($forbidden.FullName -join [Environment]::NewLine)
