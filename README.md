@@ -20,7 +20,7 @@
   <img alt="Windows 10 and 11" src="https://img.shields.io/badge/Windows-10%20%7C%2011-0078D4">
   <img alt="OpenXR" src="https://img.shields.io/badge/Runtime-OpenXR-6A5ACD">
   <img alt="Quest 3 tested" src="https://img.shields.io/badge/Hardware-Quest%203-1C1E20">
-  <img alt="Version 1.0.0" src="https://img.shields.io/badge/Version-1.0.0-65FF00">
+  <img alt="Version 1.1.0 candidate" src="https://img.shields.io/badge/Version-1.1.0%20candidate-65FF00">
   <img alt="Game media not included" src="https://img.shields.io/badge/Game%20Media-Not%20Included-C62828">
 </p>
 
@@ -30,7 +30,7 @@ Area51XR is a Windows PCVR compatibility layer for the 1995 <em>Area 51</em> arc
 
 This is not a remake, recreation, or bundled copy of the game. Area51XR connects a purpose-built OpenXR host to a modified open-source arcade emulator component. Players must provide legally obtained compatible game media.
 
-The v1.0 target is a focused, stable flat-screen VR light-gun experience that feels immediate and arcade-authentic.
+The published v1.0.0 release is the stable production baseline. The v1.1.0 candidate adds local cabinet persistence and optional player comforts without replacing the original game's logic.
 
 ## Highlights
 
@@ -43,6 +43,10 @@ The v1.0 target is a focused, stable flat-screen VR light-gun experience that fe
 - In-headset pause, resume, restart, and quit menu
 - Custom **FORTYDUBZ PRESENTS** startup screen
 - Restart returns through the Fortydubz splash
+- Original in-game high scores, initials, and military ranks persist locally
+- Optional gameplay reticle, Off by default
+- Capability-detected OpenXR passthrough, Off by default
+- Content-signature recognition for valid renamed media files
 - Process-scoped OpenXR runtime selection
 - MAME low-latency mode and fresher-frame sampling
 - Automatic legal-media verification before launch
@@ -65,8 +69,12 @@ The v1.0 target is a focused, stable flat-screen VR light-gun experience that fe
 The pause menu provides:
 
 - **Resume**
+- **Reticle: Off** or **Reticle: On**
+- **Passthrough: Off**, **Passthrough: On**, or **Passthrough: Unavailable**
 - **Restart Game**
 - **Quit Area51XR**
+
+The gameplay reticle is Off by default. The pause-menu pointer is always available. Passthrough is Off by default and is shown as Unavailable when the current OpenXR runtime does not expose a supported passthrough extension.
 
 Keyboard fallback controls remain available:
 
@@ -87,6 +95,8 @@ Starting or continuing normally consumes one arcade credit.
 | Meta Quest 3 | Steam Link | SteamVR | Not yet hardware validated |
 
 VDXR is the primary known-good runtime. SteamVR has also completed the full gameplay test through Virtual Desktop.
+
+Those validation statements apply to the published v1.0.0 gameplay path. v1.1.0 reticle and persistence behavior have automated coverage, but passthrough enablement and visual behavior still require headset testing on each runtime. The current candidate supports `XR_FB_passthrough` and `XR_HTC_passthrough` when the active runtime advertises and successfully initializes one of them. Otherwise the menu reports **Passthrough: Unavailable** without interrupting gameplay.
 
 ## How it works
 
@@ -135,7 +145,28 @@ powershell -ExecutionPolicy Bypass -File .\Start-Area51XR.ps1 `
     -RomPath "D:\MAME\roms"
 ```
 
-The launcher audits the supplied media before starting VR. Incompatible or incomplete media is rejected with a clear diagnostic.
+The launcher audits the supplied media before starting VR. The canonical layout above remains fully supported. If filenames differ, Area51XR can identify the supported ROM components by exact SHA-1 and size and identify the CHD from its versioned header metadata. Verified files are copied to a canonical per-user staging folder. Original files are never renamed, overwritten, or modified.
+
+Discovery rejects missing, invalid, and ambiguous components. Extension-only guessing is not used.
+
+## Persistent player data
+
+Area51XR preserves the original game's native local scoreboard. Scores, initials, military ranks, and cabinet behavior remain owned and rendered by Area 51 itself. Area51XR does not create a replacement leaderboard or scoring overlay.
+
+Player data is stored outside the extracted player folder:
+
+| Data | Location |
+|---|---|
+| MAME NVRAM and native scores | `%LOCALAPPDATA%\Area51XR\mame\nvram` |
+| Writable CHD differences | `%LOCALAPPDATA%\Area51XR\mame\diff` |
+| MAME configuration and input data | `%LOCALAPPDATA%\Area51XR\mame\cfg` and `input` |
+| Reticle and passthrough preferences | `%LOCALAPPDATA%\Area51XR\settings-v1.ini` |
+| Migration backups | `%LOCALAPPDATA%\Area51XR\Backups` |
+| Session logs | `%LOCALAPPDATA%\Area51XR\logs` |
+
+Pause, Resume, and Restart Game do not clear persistent cabinet data. A one-time migration checks v1.0 install-local MAME folders. Existing files are backed up before missing data is copied into the stable per-user location.
+
+To back up scores, close Area51XR and copy `%LOCALAPPDATA%\Area51XR\mame`. To reset the local scoreboard, close Area51XR, make a backup if desired, then remove only the `nvram` and `diff` folders under that location. The next launch creates clean native cabinet data.
 
 ## Runtime selection
 
@@ -170,13 +201,16 @@ Testing confirmed that an active RDP session can introduce visible latency even 
 
 ## Troubleshooting
 
-Area51XR creates a timestamped folder under `logs\` for every session. It records:
+Area51XR creates a timestamped folder under `%LOCALAPPDATA%\Area51XR\logs` for every session. It records:
 
 - selected OpenXR runtime and manifest
 - Area51XR host output
 - OpenXR loader errors
 - emulator output and errors
 - VDXR diagnostics when available
+- detected passthrough extension and initial state
+- safe player-settings load or fallback status
+- MAME's effective persistence-directory configuration
 
 If the headset does not connect:
 
@@ -211,7 +245,7 @@ Generate the Windows player and matching modified-emulator source archives:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\scripts\package-release.ps1 `
-    -Version "1.0.0"
+    -Version "1.1.0-rc1"
 ```
 
 The packaging pipeline:
@@ -246,6 +280,8 @@ Included in v1.0:
 - startup branding
 - OpenXR runtime selection
 - standalone Windows packaging and diagnostics
+
+The v1.1.0 candidate adds native cabinet-data persistence, optional reticle and passthrough toggles, and content-signature media staging. It does not add another game, online accounts, telemetry, cloud scores, or network services.
 
 Experimental monocular depth reconstruction, spatial meshes, and other scene-conversion research are outside the v1.0 launch gate. They are not presented as finished v1.0 features.
 
