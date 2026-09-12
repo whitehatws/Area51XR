@@ -11,6 +11,11 @@ bool near(float a, float b) { return std::abs(a - b) < 1.0e-4f; }
 }
 
 int main() {
+    // Area 51's live framebuffer is 320x240. The real startup path deliberately
+    // uses the same byte size so entering gameplay never requires a compositor
+    // swapchain-size transition.
+    constexpr std::size_t expected_presentation_bytes = 320u * 240u * 4u;
+
     auto shared = std::make_unique<area51xr::MameSharedState>();
     shared->protocol_version = area51xr::kMameBridgeProtocolVersion;
 
@@ -57,6 +62,15 @@ int main() {
     assert(shared->gun.start == 1);
     assert(near(shared->gun.aim_x, 0.5f));
     assert(near(shared->gun.aim_y, 0.5f));
+
+    area51xr::SimulatedXrRuntime startup_runtime(input);
+    area51xr::XrHost startup_host(startup_runtime, *shared, {}, true);
+    assert(startup_host.initialize());
+    const auto startup = startup_host.tick();
+    assert(startup.startup_active);
+    assert(startup.frame_presented);
+    assert(startup_runtime.last_presented_pixels().size() == expected_presentation_bytes);
+    startup_host.shutdown();
 
     // Reticle is default-off, toggles immediately, and renders at the active
     // controller's projected hit without changing the coordinates sent to MAME.

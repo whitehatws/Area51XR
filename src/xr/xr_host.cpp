@@ -6,7 +6,11 @@
 
 namespace area51xr {
 namespace {
-constexpr std::uint32_t kStartupWidth=640, kStartupHeight=360;
+// Keep the startup screen, live Area 51 video, pause UI, and restart splash on
+// one stable 4:3 presentation surface. Some runtimes accept a mid-session quad
+// swapchain size/aspect change but continue displaying the last image submitted
+// through the old swapchain.
+constexpr std::uint32_t kStartupWidth=320, kStartupHeight=240;
 constexpr auto kStartupDuration=std::chrono::milliseconds(4500);
 std::uint8_t next_token(std::uint8_t value) { ++value; return value ? value : 1; }
 }

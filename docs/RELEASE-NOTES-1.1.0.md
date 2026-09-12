@@ -2,7 +2,7 @@
 
 Status: hardware acceptance candidate. Do not merge, tag, or publish until VDXR and SteamVR testing passes.
 
-The first VDXR hardware pass exposed a compositor failure when presentation changed from the 640x360 startup splash to the 320x240 live game frame. The candidate now retains each resolution-specific OpenXR swapchain until session shutdown instead of destroying a recently submitted splash swapchain. This correction requires a repeat VDXR headset test.
+The first VDXR hardware passes exposed a compositor failure when presentation changed from the 640x360 startup splash to the 320x240 live game frame. The candidate now uses one stable 320x240 presentation surface for the splash, live game, pause menu, and restart splash. It also retains any resolution-specific OpenXR swapchain until session shutdown. This correction requires a repeat VDXR headset test.
 
 ## Added
 
