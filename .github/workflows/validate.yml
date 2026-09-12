@@ -45,6 +45,10 @@ jobs:
         shell: pwsh
         run: ./scripts/test-player-support.ps1
 
+      - name: Verify OpenXR D3D11 upload contract
+        shell: pwsh
+        run: ./scripts/test-openxr-upload-contract.ps1
+
       - name: Enforce source media boundary
         shell: pwsh
         run: |

@@ -65,6 +65,24 @@ bool extension_available(
 constexpr const char* kTouchPlusExtension = "XR_META_touch_controller_plus";
 constexpr const char* kTouchPlusProfile = "/interaction_profiles/meta/touch_controller_plus";
 
+std::uint64_t sampled_frame_hash(const VideoFrameView& frame) {
+    // This is diagnostic rather than cryptographic. Sampling keeps the cost
+    // negligible while proving that the CPU-side game image changes over time.
+    constexpr std::uint64_t kFnvOffset = 14695981039346656037ull;
+    constexpr std::uint64_t kFnvPrime = 1099511628211ull;
+    constexpr std::size_t kSamples = 256;
+    const auto byte_count = frame.pixels.size();
+    if (byte_count == 0) return kFnvOffset;
+
+    std::uint64_t hash = kFnvOffset;
+    for (std::size_t sample = 0; sample < kSamples; ++sample) {
+        const auto index = (sample * (byte_count - 1)) / (kSamples - 1);
+        hash ^= frame.pixels[index];
+        hash *= kFnvPrime;
+    }
+    return hash;
+}
+
 } // namespace
 
 struct OpenXrRuntime::Impl {
@@ -116,6 +134,7 @@ struct OpenXrRuntime::Impl {
     std::array<bool, 2> previous_start{};
     std::array<bool, 2> previous_menu{};
     std::uint64_t sample_number{};
+    std::uint64_t upload_number{};
     ID3D11Device* device{};
     ID3D11DeviceContext* context{};
     std::string error;
@@ -921,6 +940,21 @@ bool OpenXrRuntime::present(const VideoFrameView& frame) {
             frame.pixels.data(),
             frame.stride_bytes,
             0);
+
+        // UpdateSubresource records an asynchronous GPU copy. OpenXR requires
+        // the application to finish submitting commands that reference an
+        // acquired image before releasing it. Explicitly flush the immediate
+        // context so runtimes cannot consume the released image before this
+        // frame's upload has reached the D3D11 command queue.
+        p.context->Flush();
+
+        ++p.upload_number;
+        if (p.upload_number == 1 || p.upload_number % 60 == 0) {
+            std::cout << "openxr_upload=" << p.upload_number
+                      << " image=" << image_index
+                      << " sample_hash=" << sampled_frame_hash(frame)
+                      << " sync=flush" << std::endl;
+        }
 
         XrSwapchainImageReleaseInfo release{XR_TYPE_SWAPCHAIN_IMAGE_RELEASE_INFO};
         if (XR_FAILED(p.xrReleaseSwapchainImage(quad_swapchain->handle, &release))) {
