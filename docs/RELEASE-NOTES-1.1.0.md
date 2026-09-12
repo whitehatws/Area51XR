@@ -2,6 +2,8 @@
 
 Status: hardware acceptance candidate. Do not merge, tag, or publish until VDXR and SteamVR testing passes.
 
+The first VDXR hardware pass exposed a compositor failure when presentation changed from the 640x360 startup splash to the 320x240 live game frame. The candidate now retains each resolution-specific OpenXR swapchain until session shutdown instead of destroying a recently submitted splash swapchain. This correction requires a repeat VDXR headset test.
+
 ## Added
 
 - Native local Area 51 high scores, initials, military ranks, and cabinet data now persist through pause, restart, full exit, relaunch, and newly extracted player versions.

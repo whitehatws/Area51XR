@@ -11,11 +11,15 @@
 #include <openxr/openxr_platform.h>
 
 #include "area51xr/openxr_runtime.h"
+#include "area51xr/resolution_resource_cache.h"
 #include "area51xr/xr_aim.h"
 
 #include <array>
 #include <cstring>
+#include <iostream>
+#include <optional>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace area51xr {
@@ -64,6 +68,11 @@ constexpr const char* kTouchPlusProfile = "/interaction_profiles/meta/touch_cont
 } // namespace
 
 struct OpenXrRuntime::Impl {
+    struct QuadSwapchainResources {
+        XrSwapchain handle{XR_NULL_HANDLE};
+        std::vector<XrSwapchainImageD3D11KHR> images;
+    };
+
     HMODULE loader{};
     XrInstance instance{XR_NULL_HANDLE};
     XrSystemId system{XR_NULL_SYSTEM_ID};
@@ -79,10 +88,10 @@ struct OpenXrRuntime::Impl {
     std::array<XrPath, 2> hands{};
     XrPath touch_profile{XR_NULL_PATH};
     XrPath touch_plus_profile{XR_NULL_PATH};
-    XrSwapchain quad_swapchain{XR_NULL_HANDLE};
-    std::vector<XrSwapchainImageD3D11KHR> quad_images;
-    std::uint32_t quad_width{};
-    std::uint32_t quad_height{};
+    // Submitted swapchains may remain in use by the compositor after xrEndFrame.
+    // Keep one per video resolution until session shutdown instead of destroying
+    // the splash swapchain during the transition to the live game framebuffer.
+    ResolutionResourceCache<QuadSwapchainResources> quad_swapchains;
     XrSessionState session_state{XR_SESSION_STATE_UNKNOWN};
     XrTime predicted_display_time{};
     bool session_running{};
@@ -488,65 +497,72 @@ struct OpenXrRuntime::Impl {
         return true;
     }
 
-    bool create_quad_swapchain(std::uint32_t width, std::uint32_t height) {
-        if (quad_swapchain && width == quad_width && height == quad_height) {
-            return true;
-        }
-        if (quad_swapchain) {
-            xrDestroySwapchain(quad_swapchain);
-            quad_swapchain = XR_NULL_HANDLE;
-            quad_images.clear();
-        }
-
-        std::uint32_t count{};
-        if (XR_FAILED(xrEnumerateSwapchainFormats(session, 0, &count, nullptr)) || count == 0) {
-            return fail("no OpenXR swapchain formats available");
-        }
-        std::vector<std::int64_t> formats(count);
-        if (XR_FAILED(xrEnumerateSwapchainFormats(session, count, &count, formats.data()))) {
-            return fail("xrEnumerateSwapchainFormats failed");
-        }
-
-        std::int64_t format = 0;
-        for (const auto candidate : formats) {
-            if (candidate == DXGI_FORMAT_B8G8R8A8_UNORM || candidate == DXGI_FORMAT_B8G8R8A8_UNORM_SRGB) {
-                format = candidate;
-                break;
+    QuadSwapchainResources* get_or_create_quad_swapchain(
+        std::uint32_t width,
+        std::uint32_t height) {
+        return quad_swapchains.get_or_create(width, height, [&]()
+            -> std::optional<QuadSwapchainResources> {
+            std::uint32_t count{};
+            if (XR_FAILED(xrEnumerateSwapchainFormats(session, 0, &count, nullptr)) || count == 0) {
+                fail("no OpenXR swapchain formats available");
+                return std::nullopt;
             }
-        }
-        if (!format) {
-            return fail("runtime does not expose a BGRA8 swapchain format");
-        }
+            std::vector<std::int64_t> formats(count);
+            if (XR_FAILED(xrEnumerateSwapchainFormats(session, count, &count, formats.data()))) {
+                fail("xrEnumerateSwapchainFormats failed");
+                return std::nullopt;
+            }
 
-        XrSwapchainCreateInfo info{XR_TYPE_SWAPCHAIN_CREATE_INFO};
-        info.usageFlags = XR_SWAPCHAIN_USAGE_SAMPLED_BIT | XR_SWAPCHAIN_USAGE_COLOR_ATTACHMENT_BIT;
-        info.format = format;
-        info.sampleCount = 1;
-        info.width = width;
-        info.height = height;
-        info.faceCount = 1;
-        info.arraySize = 1;
-        info.mipCount = 1;
-        if (XR_FAILED(xrCreateSwapchain(session, &info, &quad_swapchain))) {
-            return fail("xrCreateSwapchain failed");
-        }
+            std::int64_t format = 0;
+            for (const auto candidate : formats) {
+                if (candidate == DXGI_FORMAT_B8G8R8A8_UNORM || candidate == DXGI_FORMAT_B8G8R8A8_UNORM_SRGB) {
+                    format = candidate;
+                    break;
+                }
+            }
+            if (!format) {
+                fail("runtime does not expose a BGRA8 swapchain format");
+                return std::nullopt;
+            }
 
-        std::uint32_t image_count{};
-        if (XR_FAILED(xrEnumerateSwapchainImages(quad_swapchain, 0, &image_count, nullptr)) || image_count == 0) {
-            return fail("OpenXR swapchain contains no images");
-        }
-        quad_images.assign(image_count, XrSwapchainImageD3D11KHR{XR_TYPE_SWAPCHAIN_IMAGE_D3D11_KHR});
-        if (XR_FAILED(xrEnumerateSwapchainImages(
-                quad_swapchain,
+            XrSwapchainCreateInfo info{XR_TYPE_SWAPCHAIN_CREATE_INFO};
+            info.usageFlags = XR_SWAPCHAIN_USAGE_SAMPLED_BIT | XR_SWAPCHAIN_USAGE_COLOR_ATTACHMENT_BIT;
+            info.format = format;
+            info.sampleCount = 1;
+            info.width = width;
+            info.height = height;
+            info.faceCount = 1;
+            info.arraySize = 1;
+            info.mipCount = 1;
+            QuadSwapchainResources resources{};
+            if (XR_FAILED(xrCreateSwapchain(session, &info, &resources.handle))) {
+                fail("xrCreateSwapchain failed");
+                return std::nullopt;
+            }
+
+            std::uint32_t image_count{};
+            if (XR_FAILED(xrEnumerateSwapchainImages(resources.handle, 0, &image_count, nullptr)) || image_count == 0) {
+                xrDestroySwapchain(resources.handle);
+                fail("OpenXR swapchain contains no images");
+                return std::nullopt;
+            }
+            resources.images.assign(
                 image_count,
-                &image_count,
-                reinterpret_cast<XrSwapchainImageBaseHeader*>(quad_images.data())))) {
-            return fail("xrEnumerateSwapchainImages failed");
-        }
+                XrSwapchainImageD3D11KHR{XR_TYPE_SWAPCHAIN_IMAGE_D3D11_KHR});
+            if (XR_FAILED(xrEnumerateSwapchainImages(
+                    resources.handle,
+                    image_count,
+                    &image_count,
+                    reinterpret_cast<XrSwapchainImageBaseHeader*>(resources.images.data())))) {
+                xrDestroySwapchain(resources.handle);
+                fail("xrEnumerateSwapchainImages failed");
+                return std::nullopt;
+            }
 
-        quad_width = width;
-        quad_height = height;
-        return true;
+            std::cout << "openxr_video_swapchain=created size=" << width << 'x' << height
+                      << " cached=" << (quad_swapchains.size() + 1) << std::endl;
+            return resources;
+        });
     }
 
     bool begin_if_ready(XrSessionState next) {
@@ -882,23 +898,24 @@ bool OpenXrRuntime::present(const VideoFrameView& frame) {
         if (frame.pixel_format != 1 || frame.stride_bytes < frame.width * 4u) {
             return p.fail("unsupported MAME framebuffer format");
         }
-        if (!p.create_quad_swapchain(frame.width, frame.height)) {
+        auto* quad_swapchain = p.get_or_create_quad_swapchain(frame.width, frame.height);
+        if (!quad_swapchain) {
             return false;
         }
 
         std::uint32_t image_index{};
         XrSwapchainImageAcquireInfo acquire{XR_TYPE_SWAPCHAIN_IMAGE_ACQUIRE_INFO};
-        if (XR_FAILED(p.xrAcquireSwapchainImage(p.quad_swapchain, &acquire, &image_index))) {
+        if (XR_FAILED(p.xrAcquireSwapchainImage(quad_swapchain->handle, &acquire, &image_index))) {
             return p.fail("xrAcquireSwapchainImage failed");
         }
         XrSwapchainImageWaitInfo wait{XR_TYPE_SWAPCHAIN_IMAGE_WAIT_INFO};
         wait.timeout = XR_INFINITE_DURATION;
-        if (XR_FAILED(p.xrWaitSwapchainImage(p.quad_swapchain, &wait))) {
+        if (XR_FAILED(p.xrWaitSwapchainImage(quad_swapchain->handle, &wait))) {
             return p.fail("xrWaitSwapchainImage failed");
         }
 
         p.context->UpdateSubresource(
-            p.quad_images[image_index].texture,
+            quad_swapchain->images[image_index].texture,
             0,
             nullptr,
             frame.pixels.data(),
@@ -906,14 +923,14 @@ bool OpenXrRuntime::present(const VideoFrameView& frame) {
             0);
 
         XrSwapchainImageReleaseInfo release{XR_TYPE_SWAPCHAIN_IMAGE_RELEASE_INFO};
-        if (XR_FAILED(p.xrReleaseSwapchainImage(p.quad_swapchain, &release))) {
+        if (XR_FAILED(p.xrReleaseSwapchainImage(quad_swapchain->handle, &release))) {
             return p.fail("xrReleaseSwapchainImage failed");
         }
 
         quad.layerFlags = 0;
         quad.space = p.local_space;
         quad.eyeVisibility = XR_EYE_VISIBILITY_BOTH;
-        quad.subImage.swapchain = p.quad_swapchain;
+        quad.subImage.swapchain = quad_swapchain->handle;
         quad.subImage.imageRect.offset = {0, 0};
         quad.subImage.imageRect.extent = {
             static_cast<std::int32_t>(frame.width),
@@ -978,7 +995,12 @@ void OpenXrRuntime::shutdown() {
         p.xrEndFrame(p.session, &end_info);
     }
     p.frame_begun = false;
-    if (p.quad_swapchain && p.xrDestroySwapchain) p.xrDestroySwapchain(p.quad_swapchain);
+    if (p.xrDestroySwapchain) {
+        for (auto& entry : p.quad_swapchains.entries()) {
+            if (entry.resource.handle) p.xrDestroySwapchain(entry.resource.handle);
+        }
+    }
+    p.quad_swapchains.clear();
 #ifdef XR_FB_passthrough
     if (p.passthrough == PassthroughState::on) p.set_passthrough(false);
     if (p.passthrough_layer && p.xrDestroyPassthroughLayerFB)
@@ -1007,7 +1029,6 @@ void OpenXrRuntime::shutdown() {
     if (p.instance && p.xrDestroyInstance) p.xrDestroyInstance(p.instance);
     if (p.loader) FreeLibrary(p.loader);
 
-    p.quad_swapchain = XR_NULL_HANDLE;
     p.local_space = XR_NULL_HANDLE;
     p.action_set = XR_NULL_HANDLE;
     p.session = XR_NULL_HANDLE;

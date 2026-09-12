@@ -66,7 +66,7 @@ if ([string]::IsNullOrWhiteSpace($mediaPath)) {
 }
 
 $stamp = Get-Date -Format "yyyyMMdd-HHmmss"
-$logDir = Join-Path $root "logs\play-$stamp"
+$logDir = Join-Path $playerData.Root "logs\play-$stamp"
 New-Item -ItemType Directory -Force -Path $logDir | Out-Null
 $hostOut = Join-Path $logDir "area51xr.log"
 $hostErr = Join-Path $logDir "area51xr.err.log"
