@@ -238,7 +238,20 @@ function Download-File([string]$Url, [string]$Target, [string]$Label) {
 
 Clone-IfMissing -Target $MameRoot -Url "https://github.com/mamedev/mame.git" -Label "MAME"
 
+$requiredMameCommit = "06516a9dc07f68e21092340f04e1a6f6d6a58260"
 $mameCommit = (& $windowsGit -C $MameRoot rev-parse HEAD 2>$null).Trim()
+if ($mameCommit -ne $requiredMameCommit) {
+    $mameChanges = @(& $windowsGit -C $MameRoot status --porcelain)
+    if ($mameChanges.Count -gt 0) {
+        throw "MAME is at $mameCommit with local changes. Area51XR requires $requiredMameCommit; preserve or revert that separate MAME work before continuing."
+    }
+    Write-Host "Pinning MAME to validated revision $requiredMameCommit..."
+    & $windowsGit -C $MameRoot fetch --depth 1 origin $requiredMameCommit
+    if ($LASTEXITCODE -ne 0) { throw "Could not fetch required MAME revision $requiredMameCommit." }
+    & $windowsGit -C $MameRoot checkout --detach $requiredMameCommit
+    if ($LASTEXITCODE -ne 0) { throw "Could not check out required MAME revision $requiredMameCommit." }
+    $mameCommit = (& $windowsGit -C $MameRoot rev-parse HEAD).Trim()
+}
 if ($mameCommit) {
     Write-Host "MAME commit: $mameCommit"
 }

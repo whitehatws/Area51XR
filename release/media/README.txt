@@ -21,3 +21,5 @@ An existing compatible MAME media directory can also be used by launching Start-
   -RomPath "D:\path\to\your\media"
 
 Area51XR verifies the media with the bundled emulator before starting VR. If verification fails, Area51XR will not launch the game.
+
+If your valid files use different names, point Start-Area51XR.ps1 at the folder that contains them. Area51XR recognizes only exact supported content signatures, stages canonical copies under your local Area51XR data folder, and never renames, overwrites, or modifies the originals. Missing, invalid, or ambiguous files are rejected.

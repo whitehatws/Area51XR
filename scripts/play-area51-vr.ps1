@@ -17,12 +17,17 @@ $hostExe = Join-Path $root "build-mingw\area51xr.exe"
 $ucrtBin = Join-Path $MsysRoot "ucrt64\bin"
 $resolver = Join-Path $PSScriptRoot "resolve-mame-media.ps1"
 $preparePlay = Join-Path $PSScriptRoot "prepare-play-build.ps1"
+$support = Join-Path $root "release\Support\Area51XR.PlayerSupport.psm1"
 
-foreach ($required in @($RomPath, $MameRoot, $resolver, $preparePlay)) {
+foreach ($required in @($RomPath, $MameRoot, $resolver, $preparePlay, $support)) {
     if (-not (Test-Path $required)) {
         throw "Required play path not found: $required"
     }
 }
+
+Import-Module $support -Force
+$playerData = Initialize-Area51XRPlayerData -LegacyRoots @($MameRoot,$root)
+$env:A51XR_DATA_ROOT = $playerData.Root
 
 if (-not $SkipBuild) {
     Write-Host "Preparing focused Area51XR VR play build..."
@@ -61,7 +66,7 @@ if ([string]::IsNullOrWhiteSpace($mediaPath)) {
 }
 
 $stamp = Get-Date -Format "yyyyMMdd-HHmmss"
-$logDir = Join-Path $root "logs\play-$stamp"
+$logDir = Join-Path $playerData.Root "logs\play-$stamp"
 New-Item -ItemType Directory -Force -Path $logDir | Out-Null
 $hostOut = Join-Path $logDir "area51xr.log"
 $hostErr = Join-Path $logDir "area51xr.err.log"
@@ -70,11 +75,28 @@ $mameErr = Join-Path $logDir "mame.err.log"
 $runtimeLog = Join-Path $logDir "openxr-runtime.txt"
 $vdxrLogCopy = Join-Path $logDir "vdxr-openxr.log"
 
+$persistentArgs = @(
+    "-nvram_directory", $playerData.Nvram,
+    "-diff_directory", $playerData.Diff,
+    "-cfg_directory", $playerData.Cfg,
+    "-input_directory", $playerData.Input
+)
+$persistenceConfig = @(& $mameExe @persistentArgs -showconfig 2>&1)
+if ($LASTEXITCODE -ne 0) { throw "MAME could not report its effective persistence configuration." }
+$persistenceText = $persistenceConfig -join [Environment]::NewLine
+foreach ($requiredPath in @($playerData.Nvram,$playerData.Diff,$playerData.Cfg,$playerData.Input)) {
+    if ($persistenceText.IndexOf($requiredPath,[System.StringComparison]::OrdinalIgnoreCase) -lt 0) {
+        throw "MAME did not accept the requested persistent player-data directories."
+    }
+}
+$persistenceConfig | Set-Content -Path (Join-Path $logDir "mame-persistence-config.txt") -Encoding UTF8
+
 $runtimeLines = New-Object System.Collections.Generic.List[string]
 $runtimeLines.Add("Area51XR play launch: $(Get-Date -Format o)")
 $runtimeLines.Add("Host: $hostExe")
 $runtimeLines.Add("MAME: $mameExe")
 $runtimeLines.Add("Media: $mediaPath")
+$runtimeLines.Add("Persistent game data: %LOCALAPPDATA%\Area51XR\mame")
 $runtimeLines.Add("Runtime preference: $Runtime")
 
 $activeRuntimeManifests = New-Object System.Collections.Generic.List[string]
@@ -407,11 +429,16 @@ try {
         throw "FORTYDUBZ PRESENTS startup screen did not complete. Keep the headset connected and active, then try again. Logs: $logDir"
     }
     Write-Host "FORTYDUBZ PRESENTS startup screen completed."
+    if ($hostText -match 'passthrough_extension=([^\s]+) passthrough=([^\s]+)') {
+        Add-Content -Path $runtimeLog -Value "Passthrough extension=$($Matches[1]) initial_state=$($Matches[2])"
+        Write-Host "Passthrough: $($Matches[2]) via $($Matches[1])"
+    }
 
     Write-Host "Starting Area 51 in patched MAME after the startup screen..."
     $mameArgs = @(
         "area51",
-        "-rompath", $mediaPath,
+        "-rompath", $mediaPath
+    ) + $persistentArgs + @(
         "-window",
         "-skip_gameinfo",
         "-lowlatency",
