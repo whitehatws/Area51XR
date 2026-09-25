@@ -89,14 +89,15 @@ Starting or continuing normally consumes one arcade credit.
 
 | Headset | Connection | OpenXR runtime | Status |
 |---|---|---|---|
-| Meta Quest 3 | Virtual Desktop | VDXR | Hardware validated |
-| Meta Quest 3 | Virtual Desktop | SteamVR | Hardware validated |
-| Meta Quest 3 | Meta Horizon Link or Air Link | Meta OpenXR | Launcher support implemented, hardware test blocked by Meta PC software |
+| Meta Quest 3 | Virtual Desktop | VDXR | v1.0 hardware validated; v1.1 gameplay and reticle toggling reported working; passthrough unavailable |
+| Meta Quest 3 | Virtual Desktop | SteamVR | v1.0 hardware validated; v1.1 retest pending |
+| Meta Quest 2 | Meta Horizon Link | Not recorded | Community report of smooth v1.0 gameplay ([Reddit](https://www.reddit.com/r/OculusQuest/comments/1w8kbln/comment/p88hn4a/)) |
+| Meta Quest 3 | Meta Horizon Link or Air Link | Meta OpenXR (not tested) | Not validated for Area51XR; Link client is unavailable on the current PC after two official install attempts |
 | Meta Quest 3 | Steam Link | SteamVR | Not yet hardware validated |
 
 VDXR is the primary known-good runtime. SteamVR has also completed the full gameplay test through Virtual Desktop.
 
-Those validation statements apply to the published v1.0.0 gameplay path. v1.1.0 reticle and persistence behavior have automated coverage, but passthrough enablement and visual behavior still require headset testing on each runtime. The current candidate supports `XR_FB_passthrough` and `XR_HTC_passthrough` when the active runtime advertises and successfully initializes one of them. Otherwise the menu reports **Passthrough: Unavailable** without interrupting gameplay.
+The Quest 3 v1.0 rows are maintainer tests. The Reddit report is for Quest 2 and v1.0 only; it does not validate Quest 3 Link/Air Link or v1.1 passthrough. In the latest reported v1.1 Quest 3/VDXR run, gameplay and reticle toggling worked, while passthrough read **Unavailable** because VDXR exposed neither supported extension. v1.1 preference and score-persistence behavior have automated coverage, but native scoreboard survival through headset restart and full relaunch has not yet been manually checked. The current candidate supports `XR_FB_passthrough` and `XR_HTC_passthrough` when the active runtime advertises and successfully initializes one of them. Otherwise the menu reports **Passthrough: Unavailable** without interrupting gameplay.
 
 ## How it works
 
