@@ -10,7 +10,13 @@ $hostExe = Join-Path $root "bin\area51xr.exe"
 $emulatorExe = Join-Path $root "emulator\area51xr.exe"
 $binDir = Join-Path $root "bin"
 $defaultMedia = Join-Path $root "media"
-$logRoot = Join-Path $root "logs"
+$support = Join-Path $root "Support\Area51XR.PlayerSupport.psm1"
+
+if (-not (Test-Path $support)) { throw "Area51XR installation is incomplete. Missing: $support" }
+Import-Module $support -Force
+$playerData = Initialize-Area51XRPlayerData -LegacyRoots @((Join-Path $root "emulator"),$root)
+$env:A51XR_DATA_ROOT = $playerData.Root
+$logRoot = Join-Path $playerData.Root "logs"
 
 if ([string]::IsNullOrWhiteSpace($RomPath)) {
     $RomPath = $defaultMedia
@@ -27,21 +33,9 @@ if (-not (Test-Path $RomPath)) {
     New-Item -ItemType Directory -Force -Path $RomPath | Out-Null
 }
 
-function Test-Area51Media([string]$Path) {
-    $roots = @($Path -split ';') | Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
-    $romFound = $false
-    $chdFound = $false
-    foreach ($mediaRoot in $roots) {
-        $archive = Join-Path $mediaRoot "area51.zip"
-        $looseRom = Join-Path $mediaRoot "area51\2-c_area_51_hh.hh"
-        $chd = Join-Path $mediaRoot "area51\area51.chd"
-        if ((Test-Path $archive) -or (Test-Path $looseRom)) { $romFound = $true }
-        if (Test-Path $chd) { $chdFound = $true }
-    }
-    return $romFound -and $chdFound
-}
-
-if (-not (Test-Area51Media $RomPath)) {
+if (-not (Test-Area51CanonicalMedia -MediaPath $RomPath)) {
+    try { $RomPath = Resolve-Area51Media -SearchRoot $RomPath -DataRoot $playerData.Root }
+    catch {
     Write-Host ""
     Write-Host "AREA51XR NEEDS YOUR LEGAL AREA 51 GAME MEDIA" -ForegroundColor Yellow
     Write-Host ""
@@ -53,7 +47,9 @@ if (-not (Test-Area51Media $RomPath)) {
     if ($RomPath -eq $defaultMedia) {
         Start-Process explorer.exe $defaultMedia -ErrorAction SilentlyContinue
     }
+    Write-Host "Media discovery detail: $_"
     exit 2
+    }
 }
 
 if (-not (($env:PATH -split ';') -contains $binDir)) {
@@ -71,7 +67,22 @@ $runtimeLog = Join-Path $logDir "openxr-runtime.txt"
 $vdxrLogCopy = Join-Path $logDir "vdxr-openxr.log"
 
 Write-Host "Verifying Area 51 media..."
-$auditOutput = @(& $emulatorExe -rompath $RomPath -verifyroms area51 2>&1)
+$persistentArgs = @(
+    "-nvram_directory", $playerData.Nvram,
+    "-diff_directory", $playerData.Diff,
+    "-cfg_directory", $playerData.Cfg,
+    "-input_directory", $playerData.Input
+)
+$persistenceConfig = @(& $emulatorExe @persistentArgs -showconfig 2>&1)
+if ($LASTEXITCODE -ne 0) { throw "MAME could not report its effective persistence configuration." }
+$persistenceText = $persistenceConfig -join [Environment]::NewLine
+foreach ($requiredPath in @($playerData.Nvram,$playerData.Diff,$playerData.Cfg,$playerData.Input)) {
+    if ($persistenceText.IndexOf($requiredPath,[System.StringComparison]::OrdinalIgnoreCase) -lt 0) {
+        throw "MAME did not accept the requested persistent player-data directories."
+    }
+}
+$persistenceConfig | Set-Content -Path (Join-Path $logDir "mame-persistence-config.txt") -Encoding UTF8
+$auditOutput = @(& $emulatorExe -rompath $RomPath @persistentArgs -verifyroms area51 2>&1)
 $auditExit = $LASTEXITCODE
 $auditOutput | Write-Host
 if ($auditExit -ne 0) {
@@ -83,6 +94,7 @@ $runtimeLines.Add("Area51XR release launch: $(Get-Date -Format o)")
 $runtimeLines.Add("Host: $hostExe")
 $runtimeLines.Add("Emulator: $emulatorExe")
 $runtimeLines.Add("Media: $RomPath")
+$runtimeLines.Add("Persistent game data: %LOCALAPPDATA%\Area51XR\mame")
 $runtimeLines.Add("Runtime preference: $Runtime")
 
 $activeRuntimeManifests = New-Object System.Collections.Generic.List[string]
@@ -353,10 +365,18 @@ try {
         throw "FORTYDUBZ PRESENTS startup screen did not complete. Keep the headset connected and active, then try again. Logs: $logDir"
     }
     Write-Host "FORTYDUBZ PRESENTS startup screen completed."
+    if ($hostText -match 'passthrough_extension=([^\s]+) passthrough=([^\s]+)') {
+        Add-Content -Path $runtimeLog -Value "Passthrough extension=$($Matches[1]) initial_state=$($Matches[2])"
+        Write-Host "Passthrough: $($Matches[2]) via $($Matches[1])"
+    }
 
     $emulatorArgs = @(
         "area51",
         "-rompath", $RomPath,
+        "-nvram_directory", $playerData.Nvram,
+        "-diff_directory", $playerData.Diff,
+        "-cfg_directory", $playerData.Cfg,
+        "-input_directory", $playerData.Input,
         "-window",
         "-skip_gameinfo",
         "-lowlatency",

@@ -23,6 +23,7 @@ bool SimulatedXrRuntime::present(const VideoFrameView& frame) {
         return false;
     }
     last_presented_frame_ = frame.frame_number;
+    last_presented_pixels_.assign(frame.pixels.begin(), frame.pixels.end());
     return true;
 }
 
@@ -36,12 +37,39 @@ bool SimulatedXrRuntime::present_mesh(const SpatialMeshView& mesh) {
     return true;
 }
 
+PassthroughState SimulatedXrRuntime::passthrough_state() const noexcept {
+    return passthrough_state_;
+}
+
+const char* SimulatedXrRuntime::passthrough_extension() const noexcept {
+    return passthrough_state_ == PassthroughState::unavailable ? "" : "SIMULATED_passthrough";
+}
+
+bool SimulatedXrRuntime::set_passthrough_enabled(bool enabled) {
+    if (!initialized_ || passthrough_state_ == PassthroughState::unavailable)
+        return false;
+    if (enabled && passthrough_enable_failure_) {
+        passthrough_state_ = PassthroughState::unavailable;
+        return false;
+    }
+    passthrough_state_ = enabled ? PassthroughState::on : PassthroughState::off;
+    return true;
+}
+
 void SimulatedXrRuntime::shutdown() {
     initialized_ = false;
 }
 
 void SimulatedXrRuntime::set_state(const XrInputState& state) {
     state_ = state;
+}
+
+void SimulatedXrRuntime::set_passthrough_supported(bool supported) {
+    passthrough_state_ = supported ? PassthroughState::off : PassthroughState::unavailable;
+}
+
+void SimulatedXrRuntime::set_passthrough_enable_failure(bool fail) {
+    passthrough_enable_failure_ = fail;
 }
 
 std::uint64_t SimulatedXrRuntime::last_presented_frame() const noexcept {
@@ -58,6 +86,10 @@ std::size_t SimulatedXrRuntime::last_presented_mesh_vertices() const noexcept {
 
 std::size_t SimulatedXrRuntime::last_presented_mesh_triangles() const noexcept {
     return last_presented_mesh_triangles_;
+}
+
+std::span<const std::uint8_t> SimulatedXrRuntime::last_presented_pixels() const noexcept {
+    return last_presented_pixels_;
 }
 
 Vec3 rotate_vector(const Quat& q, Vec3 v) noexcept {

@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(Area51XR VERSION 0.2.0 LANGUAGES CXX)
+project(Area51XR VERSION 1.1.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -14,6 +14,7 @@ add_library(a51xr_core
     src/core/mame_ipc.cpp
     src/core/mame_adapter.cpp
     src/core/bridge_host.cpp
+    src/core/player_settings.cpp
     src/xr/xr_runtime.cpp
     src/xr/xr_aim.cpp
     src/xr/xr_host.cpp
@@ -104,6 +105,7 @@ if(BUILD_TESTING)
         tests/mame_bridge_tests.cpp
         tests/mame_adapter_tests.cpp
         tests/bridge_host_tests.cpp
+        tests/player_settings_tests.cpp
         tests/xr_runtime_tests.cpp
         tests/xr_aim_tests.cpp
         tests/xr_host_tests.cpp
@@ -127,6 +129,7 @@ if(BUILD_TESTING)
     set_source_files_properties(tests/mame_bridge_tests.cpp PROPERTIES COMPILE_DEFINITIONS "main=area51xr_test_mame_bridge")
     set_source_files_properties(tests/mame_adapter_tests.cpp PROPERTIES COMPILE_DEFINITIONS "main=area51xr_test_mame_adapter")
     set_source_files_properties(tests/bridge_host_tests.cpp PROPERTIES COMPILE_DEFINITIONS "main=area51xr_test_bridge_host")
+    set_source_files_properties(tests/player_settings_tests.cpp PROPERTIES COMPILE_DEFINITIONS "main=area51xr_test_player_settings")
     set_source_files_properties(tests/xr_runtime_tests.cpp PROPERTIES COMPILE_DEFINITIONS "main=area51xr_test_xr_runtime")
     set_source_files_properties(tests/xr_aim_tests.cpp PROPERTIES COMPILE_DEFINITIONS "main=area51xr_test_xr_aim")
     set_source_files_properties(tests/xr_host_tests.cpp PROPERTIES COMPILE_DEFINITIONS "main=area51xr_test_xr_host")

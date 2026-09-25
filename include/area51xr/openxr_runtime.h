@@ -18,6 +18,9 @@ public:
     bool poll(XrInputState& state) override;
     bool present(const VideoFrameView& frame) override;
     bool present_mesh(const SpatialMeshView& mesh) override;
+    [[nodiscard]] PassthroughState passthrough_state() const noexcept override;
+    [[nodiscard]] const char* passthrough_extension() const noexcept override;
+    bool set_passthrough_enabled(bool enabled) override;
     void shutdown() override;
 
     [[nodiscard]] const char* last_error() const noexcept;

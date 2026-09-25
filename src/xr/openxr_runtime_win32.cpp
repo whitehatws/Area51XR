@@ -11,11 +11,15 @@
 #include <openxr/openxr_platform.h>
 
 #include "area51xr/openxr_runtime.h"
+#include "area51xr/resolution_resource_cache.h"
 #include "area51xr/xr_aim.h"
 
 #include <array>
 #include <cstring>
+#include <iostream>
+#include <optional>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace area51xr {
@@ -61,9 +65,32 @@ bool extension_available(
 constexpr const char* kTouchPlusExtension = "XR_META_touch_controller_plus";
 constexpr const char* kTouchPlusProfile = "/interaction_profiles/meta/touch_controller_plus";
 
+std::uint64_t sampled_frame_hash(const VideoFrameView& frame) {
+    // This is diagnostic rather than cryptographic. Sampling keeps the cost
+    // negligible while proving that the CPU-side game image changes over time.
+    constexpr std::uint64_t kFnvOffset = 14695981039346656037ull;
+    constexpr std::uint64_t kFnvPrime = 1099511628211ull;
+    constexpr std::size_t kSamples = 256;
+    const auto byte_count = frame.pixels.size();
+    if (byte_count == 0) return kFnvOffset;
+
+    std::uint64_t hash = kFnvOffset;
+    for (std::size_t sample = 0; sample < kSamples; ++sample) {
+        const auto index = (sample * (byte_count - 1)) / (kSamples - 1);
+        hash ^= frame.pixels[index];
+        hash *= kFnvPrime;
+    }
+    return hash;
+}
+
 } // namespace
 
 struct OpenXrRuntime::Impl {
+    struct QuadSwapchainResources {
+        XrSwapchain handle{XR_NULL_HANDLE};
+        std::vector<XrSwapchainImageD3D11KHR> images;
+    };
+
     HMODULE loader{};
     XrInstance instance{XR_NULL_HANDLE};
     XrSystemId system{XR_NULL_SYSTEM_ID};
@@ -79,21 +106,35 @@ struct OpenXrRuntime::Impl {
     std::array<XrPath, 2> hands{};
     XrPath touch_profile{XR_NULL_PATH};
     XrPath touch_plus_profile{XR_NULL_PATH};
-    XrSwapchain quad_swapchain{XR_NULL_HANDLE};
-    std::vector<XrSwapchainImageD3D11KHR> quad_images;
-    std::uint32_t quad_width{};
-    std::uint32_t quad_height{};
+    // Submitted swapchains may remain in use by the compositor after xrEndFrame.
+    // Keep one per video resolution until session shutdown instead of destroying
+    // the splash swapchain during the transition to the live game framebuffer.
+    ResolutionResourceCache<QuadSwapchainResources> quad_swapchains;
     XrSessionState session_state{XR_SESSION_STATE_UNKNOWN};
     XrTime predicted_display_time{};
     bool session_running{};
     bool frame_begun{};
     bool touch_plus_enabled{};
+    bool fb_passthrough_detected{};
+    bool fb_passthrough_enabled{};
+    bool htc_passthrough_detected{};
+    bool htc_passthrough_enabled{};
+    bool passthrough_requested{};
+    PassthroughState passthrough{PassthroughState::unavailable};
+#ifdef XR_FB_passthrough
+    XrPassthroughFB passthrough_handle{XR_NULL_HANDLE};
+    XrPassthroughLayerFB passthrough_layer{XR_NULL_HANDLE};
+#endif
+#ifdef XR_HTC_passthrough
+    XrPassthroughHTC htc_passthrough_handle{XR_NULL_HANDLE};
+#endif
     std::size_t active_hand{1};
     std::array<bool, 2> previous_trigger{};
     std::array<bool, 2> previous_coin{};
     std::array<bool, 2> previous_start{};
     std::array<bool, 2> previous_menu{};
     std::uint64_t sample_number{};
+    std::uint64_t upload_number{};
     ID3D11Device* device{};
     ID3D11DeviceContext* context{};
     std::string error;
@@ -132,6 +173,20 @@ struct OpenXrRuntime::Impl {
     PFN_xrAcquireSwapchainImage xrAcquireSwapchainImage{};
     PFN_xrWaitSwapchainImage xrWaitSwapchainImage{};
     PFN_xrReleaseSwapchainImage xrReleaseSwapchainImage{};
+#ifdef XR_FB_passthrough
+    PFN_xrCreatePassthroughFB xrCreatePassthroughFB{};
+    PFN_xrDestroyPassthroughFB xrDestroyPassthroughFB{};
+    PFN_xrPassthroughStartFB xrPassthroughStartFB{};
+    PFN_xrPassthroughPauseFB xrPassthroughPauseFB{};
+    PFN_xrCreatePassthroughLayerFB xrCreatePassthroughLayerFB{};
+    PFN_xrDestroyPassthroughLayerFB xrDestroyPassthroughLayerFB{};
+    PFN_xrPassthroughLayerResumeFB xrPassthroughLayerResumeFB{};
+    PFN_xrPassthroughLayerPauseFB xrPassthroughLayerPauseFB{};
+#endif
+#ifdef XR_HTC_passthrough
+    PFN_xrCreatePassthroughHTC xrCreatePassthroughHTC{};
+    PFN_xrDestroyPassthroughHTC xrDestroyPassthroughHTC{};
+#endif
 
     bool fail(const char* text) {
         error = text;
@@ -172,6 +227,87 @@ struct OpenXrRuntime::Impl {
             load_proc(xrGetInstanceProcAddr, instance, "xrAcquireSwapchainImage", xrAcquireSwapchainImage) &&
             load_proc(xrGetInstanceProcAddr, instance, "xrWaitSwapchainImage", xrWaitSwapchainImage) &&
             load_proc(xrGetInstanceProcAddr, instance, "xrReleaseSwapchainImage", xrReleaseSwapchainImage);
+    }
+
+    bool create_passthrough_resources() {
+#ifdef XR_FB_passthrough
+        if (fb_passthrough_enabled) {
+            const bool loaded =
+                load_proc(xrGetInstanceProcAddr, instance, "xrCreatePassthroughFB", xrCreatePassthroughFB) &&
+                load_proc(xrGetInstanceProcAddr, instance, "xrDestroyPassthroughFB", xrDestroyPassthroughFB) &&
+                load_proc(xrGetInstanceProcAddr, instance, "xrPassthroughStartFB", xrPassthroughStartFB) &&
+                load_proc(xrGetInstanceProcAddr, instance, "xrPassthroughPauseFB", xrPassthroughPauseFB) &&
+                load_proc(xrGetInstanceProcAddr, instance, "xrCreatePassthroughLayerFB", xrCreatePassthroughLayerFB) &&
+                load_proc(xrGetInstanceProcAddr, instance, "xrDestroyPassthroughLayerFB", xrDestroyPassthroughLayerFB) &&
+                load_proc(xrGetInstanceProcAddr, instance, "xrPassthroughLayerResumeFB", xrPassthroughLayerResumeFB) &&
+                load_proc(xrGetInstanceProcAddr, instance, "xrPassthroughLayerPauseFB", xrPassthroughLayerPauseFB);
+            if (loaded) {
+                XrPassthroughCreateInfoFB passthrough_info{XR_TYPE_PASSTHROUGH_CREATE_INFO_FB};
+                if (XR_SUCCEEDED(xrCreatePassthroughFB(session, &passthrough_info, &passthrough_handle))) {
+                    XrPassthroughLayerCreateInfoFB layer_info{XR_TYPE_PASSTHROUGH_LAYER_CREATE_INFO_FB};
+                    layer_info.passthrough = passthrough_handle;
+                    layer_info.purpose = XR_PASSTHROUGH_LAYER_PURPOSE_RECONSTRUCTION_FB;
+                    if (XR_SUCCEEDED(xrCreatePassthroughLayerFB(
+                            session, &layer_info, &passthrough_layer))) {
+                        passthrough = PassthroughState::off;
+                        return true;
+                    }
+                    xrDestroyPassthroughFB(passthrough_handle);
+                    passthrough_handle = XR_NULL_HANDLE;
+                }
+            }
+            fb_passthrough_enabled = false;
+        }
+#endif
+#ifdef XR_HTC_passthrough
+        if (htc_passthrough_enabled &&
+            load_proc(xrGetInstanceProcAddr, instance, "xrCreatePassthroughHTC", xrCreatePassthroughHTC) &&
+            load_proc(xrGetInstanceProcAddr, instance, "xrDestroyPassthroughHTC", xrDestroyPassthroughHTC)) {
+            XrPassthroughCreateInfoHTC info{XR_TYPE_PASSTHROUGH_CREATE_INFO_HTC};
+            info.form = XR_PASSTHROUGH_FORM_PLANAR_HTC;
+            if (XR_SUCCEEDED(xrCreatePassthroughHTC(session, &info, &htc_passthrough_handle))) {
+                passthrough = PassthroughState::off;
+                return true;
+            }
+        }
+        htc_passthrough_enabled = false;
+#endif
+        return false;
+    }
+
+    bool set_passthrough(bool enabled) {
+        if (passthrough == PassthroughState::unavailable) return false;
+        passthrough_requested = enabled;
+        if (!session_running) {
+            passthrough = PassthroughState::off;
+            return true;
+        }
+#ifdef XR_FB_passthrough
+        if (fb_passthrough_enabled && passthrough_handle && passthrough_layer) {
+            if (enabled) {
+                if (XR_FAILED(xrPassthroughStartFB(passthrough_handle)) ||
+                    XR_FAILED(xrPassthroughLayerResumeFB(passthrough_layer))) {
+                    passthrough = PassthroughState::unavailable;
+                    fb_passthrough_enabled = false;
+                    return false;
+                }
+                passthrough = PassthroughState::on;
+            } else {
+                xrPassthroughLayerPauseFB(passthrough_layer);
+                xrPassthroughPauseFB(passthrough_handle);
+                passthrough = PassthroughState::off;
+            }
+            return true;
+        }
+#endif
+#ifdef XR_HTC_passthrough
+        if (htc_passthrough_enabled && htc_passthrough_handle) {
+            passthrough = enabled ? PassthroughState::on : PassthroughState::off;
+            return true;
+        }
+#endif
+        passthrough = PassthroughState::unavailable;
+        return false;
     }
 
     bool create_device(const LUID& required_luid, D3D_FEATURE_LEVEL min_feature) {
@@ -380,65 +516,72 @@ struct OpenXrRuntime::Impl {
         return true;
     }
 
-    bool create_quad_swapchain(std::uint32_t width, std::uint32_t height) {
-        if (quad_swapchain && width == quad_width && height == quad_height) {
-            return true;
-        }
-        if (quad_swapchain) {
-            xrDestroySwapchain(quad_swapchain);
-            quad_swapchain = XR_NULL_HANDLE;
-            quad_images.clear();
-        }
-
-        std::uint32_t count{};
-        if (XR_FAILED(xrEnumerateSwapchainFormats(session, 0, &count, nullptr)) || count == 0) {
-            return fail("no OpenXR swapchain formats available");
-        }
-        std::vector<std::int64_t> formats(count);
-        if (XR_FAILED(xrEnumerateSwapchainFormats(session, count, &count, formats.data()))) {
-            return fail("xrEnumerateSwapchainFormats failed");
-        }
-
-        std::int64_t format = 0;
-        for (const auto candidate : formats) {
-            if (candidate == DXGI_FORMAT_B8G8R8A8_UNORM || candidate == DXGI_FORMAT_B8G8R8A8_UNORM_SRGB) {
-                format = candidate;
-                break;
+    QuadSwapchainResources* get_or_create_quad_swapchain(
+        std::uint32_t width,
+        std::uint32_t height) {
+        return quad_swapchains.get_or_create(width, height, [&]()
+            -> std::optional<QuadSwapchainResources> {
+            std::uint32_t count{};
+            if (XR_FAILED(xrEnumerateSwapchainFormats(session, 0, &count, nullptr)) || count == 0) {
+                fail("no OpenXR swapchain formats available");
+                return std::nullopt;
             }
-        }
-        if (!format) {
-            return fail("runtime does not expose a BGRA8 swapchain format");
-        }
+            std::vector<std::int64_t> formats(count);
+            if (XR_FAILED(xrEnumerateSwapchainFormats(session, count, &count, formats.data()))) {
+                fail("xrEnumerateSwapchainFormats failed");
+                return std::nullopt;
+            }
 
-        XrSwapchainCreateInfo info{XR_TYPE_SWAPCHAIN_CREATE_INFO};
-        info.usageFlags = XR_SWAPCHAIN_USAGE_SAMPLED_BIT | XR_SWAPCHAIN_USAGE_COLOR_ATTACHMENT_BIT;
-        info.format = format;
-        info.sampleCount = 1;
-        info.width = width;
-        info.height = height;
-        info.faceCount = 1;
-        info.arraySize = 1;
-        info.mipCount = 1;
-        if (XR_FAILED(xrCreateSwapchain(session, &info, &quad_swapchain))) {
-            return fail("xrCreateSwapchain failed");
-        }
+            std::int64_t format = 0;
+            for (const auto candidate : formats) {
+                if (candidate == DXGI_FORMAT_B8G8R8A8_UNORM || candidate == DXGI_FORMAT_B8G8R8A8_UNORM_SRGB) {
+                    format = candidate;
+                    break;
+                }
+            }
+            if (!format) {
+                fail("runtime does not expose a BGRA8 swapchain format");
+                return std::nullopt;
+            }
 
-        std::uint32_t image_count{};
-        if (XR_FAILED(xrEnumerateSwapchainImages(quad_swapchain, 0, &image_count, nullptr)) || image_count == 0) {
-            return fail("OpenXR swapchain contains no images");
-        }
-        quad_images.assign(image_count, XrSwapchainImageD3D11KHR{XR_TYPE_SWAPCHAIN_IMAGE_D3D11_KHR});
-        if (XR_FAILED(xrEnumerateSwapchainImages(
-                quad_swapchain,
+            XrSwapchainCreateInfo info{XR_TYPE_SWAPCHAIN_CREATE_INFO};
+            info.usageFlags = XR_SWAPCHAIN_USAGE_SAMPLED_BIT | XR_SWAPCHAIN_USAGE_COLOR_ATTACHMENT_BIT;
+            info.format = format;
+            info.sampleCount = 1;
+            info.width = width;
+            info.height = height;
+            info.faceCount = 1;
+            info.arraySize = 1;
+            info.mipCount = 1;
+            QuadSwapchainResources resources{};
+            if (XR_FAILED(xrCreateSwapchain(session, &info, &resources.handle))) {
+                fail("xrCreateSwapchain failed");
+                return std::nullopt;
+            }
+
+            std::uint32_t image_count{};
+            if (XR_FAILED(xrEnumerateSwapchainImages(resources.handle, 0, &image_count, nullptr)) || image_count == 0) {
+                xrDestroySwapchain(resources.handle);
+                fail("OpenXR swapchain contains no images");
+                return std::nullopt;
+            }
+            resources.images.assign(
                 image_count,
-                &image_count,
-                reinterpret_cast<XrSwapchainImageBaseHeader*>(quad_images.data())))) {
-            return fail("xrEnumerateSwapchainImages failed");
-        }
+                XrSwapchainImageD3D11KHR{XR_TYPE_SWAPCHAIN_IMAGE_D3D11_KHR});
+            if (XR_FAILED(xrEnumerateSwapchainImages(
+                    resources.handle,
+                    image_count,
+                    &image_count,
+                    reinterpret_cast<XrSwapchainImageBaseHeader*>(resources.images.data())))) {
+                xrDestroySwapchain(resources.handle);
+                fail("xrEnumerateSwapchainImages failed");
+                return std::nullopt;
+            }
 
-        quad_width = width;
-        quad_height = height;
-        return true;
+            std::cout << "openxr_video_swapchain=created size=" << width << 'x' << height
+                      << " cached=" << (quad_swapchains.size() + 1) << std::endl;
+            return resources;
+        });
     }
 
     bool begin_if_ready(XrSessionState next) {
@@ -450,7 +593,18 @@ struct OpenXrRuntime::Impl {
                 return fail("xrBeginSession failed");
             }
             session_running = true;
+            if (passthrough_requested && passthrough != PassthroughState::unavailable)
+                set_passthrough(true);
         } else if (next == XR_SESSION_STATE_STOPPING && session_running) {
+#ifdef XR_FB_passthrough
+            if (passthrough == PassthroughState::on) {
+                xrPassthroughLayerPauseFB(passthrough_layer);
+                xrPassthroughPauseFB(passthrough_handle);
+                passthrough = PassthroughState::off;
+            }
+#endif
+            if (passthrough == PassthroughState::on)
+                passthrough = PassthroughState::off;
             xrEndSession(session);
             session_running = false;
             frame_begun = false;
@@ -520,12 +674,32 @@ bool OpenXrRuntime::initialize() {
     }
 
     p.touch_plus_enabled = extension_available(available_extensions, kTouchPlusExtension);
+#ifdef XR_FB_passthrough
+    p.fb_passthrough_detected = extension_available(
+        available_extensions, XR_FB_PASSTHROUGH_EXTENSION_NAME);
+    p.fb_passthrough_enabled = p.fb_passthrough_detected;
+#endif
+#ifdef XR_HTC_passthrough
+    p.htc_passthrough_detected = extension_available(
+        available_extensions, XR_HTC_PASSTHROUGH_EXTENSION_NAME);
+    p.htc_passthrough_enabled = p.htc_passthrough_detected;
+#endif
 
     std::vector<const char*> extensions;
     extensions.push_back(XR_KHR_D3D11_ENABLE_EXTENSION_NAME);
     if (p.touch_plus_enabled) {
         extensions.push_back(kTouchPlusExtension);
     }
+#ifdef XR_FB_passthrough
+    if (p.fb_passthrough_enabled) {
+        extensions.push_back(XR_FB_PASSTHROUGH_EXTENSION_NAME);
+    }
+#endif
+#ifdef XR_HTC_passthrough
+    if (p.htc_passthrough_enabled) {
+        extensions.push_back(XR_HTC_PASSTHROUGH_EXTENSION_NAME);
+    }
+#endif
 
     XrInstanceCreateInfo instance_info{XR_TYPE_INSTANCE_CREATE_INFO};
     std::strncpy(instance_info.applicationInfo.applicationName, "Area51XR", XR_MAX_APPLICATION_NAME_SIZE - 1);
@@ -562,6 +736,7 @@ bool OpenXrRuntime::initialize() {
     if (XR_FAILED(p.xrCreateSession(p.instance, &session_info, &p.session))) {
         return p.fail("xrCreateSession failed");
     }
+    p.create_passthrough_resources();
 
     XrReferenceSpaceCreateInfo space_info{XR_TYPE_REFERENCE_SPACE_CREATE_INFO};
     space_info.referenceSpaceType = XR_REFERENCE_SPACE_TYPE_LOCAL;
@@ -717,46 +892,79 @@ bool OpenXrRuntime::present(const VideoFrameView& frame) {
         return p.fail("OpenXR frame was not begun before presentation");
     }
 
-    const XrCompositionLayerBaseHeader* layers[1]{};
+    const XrCompositionLayerBaseHeader* layers[2]{};
     std::uint32_t layer_count = 0;
     XrCompositionLayerQuad quad{XR_TYPE_COMPOSITION_LAYER_QUAD};
+#ifdef XR_FB_passthrough
+    XrCompositionLayerPassthroughFB passthrough_layer{XR_TYPE_COMPOSITION_LAYER_PASSTHROUGH_FB};
+    if (p.passthrough == PassthroughState::on && p.passthrough_layer) {
+        passthrough_layer.layerHandle = p.passthrough_layer;
+        layers[layer_count++] = reinterpret_cast<const XrCompositionLayerBaseHeader*>(&passthrough_layer);
+    }
+#endif
+#ifdef XR_HTC_passthrough
+    XrCompositionLayerPassthroughHTC htc_layer{XR_TYPE_COMPOSITION_LAYER_PASSTHROUGH_HTC};
+    if (p.passthrough == PassthroughState::on && p.htc_passthrough_handle) {
+        htc_layer.space = p.local_space;
+        htc_layer.passthrough = p.htc_passthrough_handle;
+        htc_layer.color = XrPassthroughColorHTC{XR_TYPE_PASSTHROUGH_COLOR_HTC};
+        htc_layer.color.alpha = 1.0f;
+        layers[layer_count++] = reinterpret_cast<const XrCompositionLayerBaseHeader*>(&htc_layer);
+    }
+#endif
 
     if (frame.width && frame.height && !frame.pixels.empty()) {
         if (frame.pixel_format != 1 || frame.stride_bytes < frame.width * 4u) {
             return p.fail("unsupported MAME framebuffer format");
         }
-        if (!p.create_quad_swapchain(frame.width, frame.height)) {
+        auto* quad_swapchain = p.get_or_create_quad_swapchain(frame.width, frame.height);
+        if (!quad_swapchain) {
             return false;
         }
 
         std::uint32_t image_index{};
         XrSwapchainImageAcquireInfo acquire{XR_TYPE_SWAPCHAIN_IMAGE_ACQUIRE_INFO};
-        if (XR_FAILED(p.xrAcquireSwapchainImage(p.quad_swapchain, &acquire, &image_index))) {
+        if (XR_FAILED(p.xrAcquireSwapchainImage(quad_swapchain->handle, &acquire, &image_index))) {
             return p.fail("xrAcquireSwapchainImage failed");
         }
         XrSwapchainImageWaitInfo wait{XR_TYPE_SWAPCHAIN_IMAGE_WAIT_INFO};
         wait.timeout = XR_INFINITE_DURATION;
-        if (XR_FAILED(p.xrWaitSwapchainImage(p.quad_swapchain, &wait))) {
+        if (XR_FAILED(p.xrWaitSwapchainImage(quad_swapchain->handle, &wait))) {
             return p.fail("xrWaitSwapchainImage failed");
         }
 
         p.context->UpdateSubresource(
-            p.quad_images[image_index].texture,
+            quad_swapchain->images[image_index].texture,
             0,
             nullptr,
             frame.pixels.data(),
             frame.stride_bytes,
             0);
 
+        // UpdateSubresource records an asynchronous GPU copy. OpenXR requires
+        // the application to finish submitting commands that reference an
+        // acquired image before releasing it. Explicitly flush the immediate
+        // context so runtimes cannot consume the released image before this
+        // frame's upload has reached the D3D11 command queue.
+        p.context->Flush();
+
+        ++p.upload_number;
+        if (p.upload_number == 1 || p.upload_number % 60 == 0) {
+            std::cout << "openxr_upload=" << p.upload_number
+                      << " image=" << image_index
+                      << " sample_hash=" << sampled_frame_hash(frame)
+                      << " sync=flush" << std::endl;
+        }
+
         XrSwapchainImageReleaseInfo release{XR_TYPE_SWAPCHAIN_IMAGE_RELEASE_INFO};
-        if (XR_FAILED(p.xrReleaseSwapchainImage(p.quad_swapchain, &release))) {
+        if (XR_FAILED(p.xrReleaseSwapchainImage(quad_swapchain->handle, &release))) {
             return p.fail("xrReleaseSwapchainImage failed");
         }
 
         quad.layerFlags = 0;
         quad.space = p.local_space;
         quad.eyeVisibility = XR_EYE_VISIBILITY_BOTH;
-        quad.subImage.swapchain = p.quad_swapchain;
+        quad.subImage.swapchain = quad_swapchain->handle;
         quad.subImage.imageRect.offset = {0, 0};
         quad.subImage.imageRect.extent = {
             static_cast<std::int32_t>(frame.width),
@@ -769,8 +977,7 @@ bool OpenXrRuntime::present(const VideoFrameView& frame) {
             kDefaultScreenWidthMeters,
             kDefaultScreenWidthMeters * static_cast<float>(frame.height) / static_cast<float>(frame.width)
         };
-        layers[0] = reinterpret_cast<const XrCompositionLayerBaseHeader*>(&quad);
-        layer_count = 1;
+        layers[layer_count++] = reinterpret_cast<const XrCompositionLayerBaseHeader*>(&quad);
     }
 
     XrFrameEndInfo end_info{XR_TYPE_FRAME_END_INFO};
@@ -786,6 +993,30 @@ bool OpenXrRuntime::present(const VideoFrameView& frame) {
     return true;
 }
 
+PassthroughState OpenXrRuntime::passthrough_state() const noexcept {
+    return impl_->passthrough;
+}
+
+const char* OpenXrRuntime::passthrough_extension() const noexcept {
+#ifdef XR_FB_passthrough
+    if (impl_->passthrough_layer) return "XR_FB_passthrough";
+#endif
+#ifdef XR_HTC_passthrough
+    if (impl_->htc_passthrough_handle) return "XR_HTC_passthrough";
+#endif
+#ifdef XR_FB_passthrough
+    if (impl_->fb_passthrough_detected) return "XR_FB_passthrough";
+#endif
+#ifdef XR_HTC_passthrough
+    if (impl_->htc_passthrough_detected) return "XR_HTC_passthrough";
+#endif
+    return "";
+}
+
+bool OpenXrRuntime::set_passthrough_enabled(bool enabled) {
+    return impl_->set_passthrough(enabled);
+}
+
 void OpenXrRuntime::shutdown() {
     if (!impl_) {
         return;
@@ -798,7 +1029,26 @@ void OpenXrRuntime::shutdown() {
         p.xrEndFrame(p.session, &end_info);
     }
     p.frame_begun = false;
-    if (p.quad_swapchain && p.xrDestroySwapchain) p.xrDestroySwapchain(p.quad_swapchain);
+    if (p.xrDestroySwapchain) {
+        for (auto& entry : p.quad_swapchains.entries()) {
+            if (entry.resource.handle) p.xrDestroySwapchain(entry.resource.handle);
+        }
+    }
+    p.quad_swapchains.clear();
+#ifdef XR_FB_passthrough
+    if (p.passthrough == PassthroughState::on) p.set_passthrough(false);
+    if (p.passthrough_layer && p.xrDestroyPassthroughLayerFB)
+        p.xrDestroyPassthroughLayerFB(p.passthrough_layer);
+    if (p.passthrough_handle && p.xrDestroyPassthroughFB)
+        p.xrDestroyPassthroughFB(p.passthrough_handle);
+    p.passthrough_layer = XR_NULL_HANDLE;
+    p.passthrough_handle = XR_NULL_HANDLE;
+#endif
+#ifdef XR_HTC_passthrough
+    if (p.htc_passthrough_handle && p.xrDestroyPassthroughHTC)
+        p.xrDestroyPassthroughHTC(p.htc_passthrough_handle);
+    p.htc_passthrough_handle = XR_NULL_HANDLE;
+#endif
     if (p.session_running && p.xrEndSession && p.session) p.xrEndSession(p.session);
     p.session_running = false;
     for (auto& space : p.aim_spaces) {
@@ -813,7 +1063,6 @@ void OpenXrRuntime::shutdown() {
     if (p.instance && p.xrDestroyInstance) p.xrDestroyInstance(p.instance);
     if (p.loader) FreeLibrary(p.loader);
 
-    p.quad_swapchain = XR_NULL_HANDLE;
     p.local_space = XR_NULL_HANDLE;
     p.action_set = XR_NULL_HANDLE;
     p.session = XR_NULL_HANDLE;
@@ -821,6 +1070,11 @@ void OpenXrRuntime::shutdown() {
     p.context = nullptr;
     p.device = nullptr;
     p.loader = nullptr;
+    p.passthrough = PassthroughState::unavailable;
+    p.fb_passthrough_detected = false;
+    p.fb_passthrough_enabled = false;
+    p.htc_passthrough_detected = false;
+    p.htc_passthrough_enabled = false;
 }
 
 const char* OpenXrRuntime::last_error() const noexcept {

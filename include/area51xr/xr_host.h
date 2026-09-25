@@ -1,6 +1,7 @@
 #pragma once
 
 #include "area51xr/bridge_host.h"
+#include "area51xr/player_settings.h"
 #include "area51xr/xr_aim.h"
 #include "area51xr/xr_runtime.h"
 
@@ -23,6 +24,11 @@ struct HostTickResult {
     bool startup_active{};
     bool restart_requested{};
     bool quit_requested{};
+    bool settings_changed{};
+    bool passthrough_toggle_failed{};
+    bool reticle_enabled{};
+    PassthroughState passthrough{PassthroughState::unavailable};
+    ControllerHand active_hand{ControllerHand::right};
     bool frame_presented{};
     FrameStatus frame{};
 };
@@ -33,11 +39,13 @@ public:
         XrRuntime& runtime,
         MameSharedState& shared,
         AimPlane plane = {},
-        bool show_startup = true);
+        bool show_startup = true,
+        PlayerSettings settings = {});
 
     bool initialize();
     HostTickResult tick();
     void shutdown();
+    [[nodiscard]] const PlayerSettings& settings() const noexcept;
 
 private:
     XrRuntime& runtime_;
@@ -54,6 +62,7 @@ private:
     bool startup_started_{};
     bool startup_rendered_{};
     bool has_frame_{};
+    PlayerSettings settings_{};
     bool menu_open_{};
     bool last_menu_down_{};
     bool last_trigger_down_{};
