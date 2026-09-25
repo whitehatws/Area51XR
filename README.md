@@ -92,7 +92,7 @@ Starting or continuing normally consumes one arcade credit.
 | Meta Quest 3 | Virtual Desktop | VDXR | v1.0 hardware validated; v1.1 gameplay and reticle toggling reported working; passthrough unavailable |
 | Meta Quest 3 | Virtual Desktop | SteamVR | v1.0 hardware validated; v1.1 retest pending |
 | Meta Quest 2 | Meta Horizon Link | Not recorded | Community report of smooth v1.0 gameplay ([Reddit](https://www.reddit.com/r/OculusQuest/comments/1w8kbln/comment/p88hn4a/)) |
-| Meta Quest 3 | Meta Horizon Link or Air Link | Meta OpenXR (not tested) | Not validated for Area51XR; Link client is unavailable on the current PC after two official install attempts |
+| Meta Quest 3 | Meta Horizon Link or Air Link | Meta OpenXR (not tested) | Not yet hardware validated for Area51XR |
 | Meta Quest 3 | Steam Link | SteamVR | Not yet hardware validated |
 
 VDXR is the primary known-good runtime. SteamVR has also completed the full gameplay test through Virtual Desktop.
