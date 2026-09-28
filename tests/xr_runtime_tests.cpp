@@ -1,4 +1,5 @@
 #include "area51xr/xr_runtime.h"
+#include "area51xr/resolution_resource_cache.h"
 
 #include <array>
 #include <cassert>
@@ -13,6 +14,21 @@ bool near(float a, float b) {
 } // namespace
 
 int main() {
+    struct MockSwapchain { int id{}; };
+    area51xr::ResolutionResourceCache<MockSwapchain> swapchains;
+    int created = 0;
+    const auto factory = [&]() -> std::optional<MockSwapchain> {
+        return MockSwapchain{++created};
+    };
+    auto* splash_swapchain = swapchains.get_or_create(640, 360, factory);
+    assert(splash_swapchain && splash_swapchain->id == 1);
+    auto* game_swapchain = swapchains.get_or_create(320, 240, factory);
+    assert(game_swapchain && game_swapchain->id == 2);
+    assert(swapchains.size() == 2);
+    auto* retained_splash = swapchains.get_or_create(640, 360, factory);
+    assert(retained_splash && retained_splash->id == 1);
+    assert(created == 2);
+
     area51xr::Pose identity{};
     const auto forward = area51xr::aim_forward(identity);
     assert(near(forward.x, 0.0f));
@@ -42,6 +58,7 @@ int main() {
     initial.left_menu_down = true;
     initial.sample_number = 7;
     area51xr::SimulatedXrRuntime runtime(initial);
+    assert(runtime.passthrough_state() == area51xr::PassthroughState::unavailable);
     assert(runtime.initialize());
 
     area51xr::XrInputState sampled{};
@@ -59,6 +76,22 @@ int main() {
     assert(sampled.left_coin_down);
     assert(sampled.left_start_down);
     assert(sampled.left_menu_down);
+
+    runtime.set_passthrough_supported(true);
+    assert(runtime.passthrough_state() == area51xr::PassthroughState::off);
+    assert(runtime.set_passthrough_enabled(true));
+    assert(runtime.passthrough_state() == area51xr::PassthroughState::on);
+    assert(runtime.set_passthrough_enabled(false));
+    assert(runtime.passthrough_state() == area51xr::PassthroughState::off);
+
+    runtime.set_passthrough_enable_failure(true);
+    assert(!runtime.set_passthrough_enabled(true));
+    assert(runtime.passthrough_state() == area51xr::PassthroughState::unavailable);
+
+    initial.session_running = false;
+    runtime.set_state(initial);
+    assert(runtime.poll(sampled));
+    assert(!sampled.session_running);
 
     const std::array<area51xr::SpatialMeshVertexView, 3> vertices{{
         {{0.0f, 0.0f, -1.0f}, 0.0f, 0.0f},

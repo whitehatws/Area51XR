@@ -1,4 +1,5 @@
 #include "area51xr/bridge_host.h"
+#include "area51xr/player_settings.h"
 #include "area51xr/xr_host.h"
 #include "core/projection.hpp"
 
@@ -73,12 +74,30 @@ int run_xr_bridge() {
         return 4;
     }
 
+    area51xr::PlayerSettingsStore settings_store(
+        area51xr::PlayerSettingsStore::default_path());
+    const auto loaded_settings = settings_store.load();
+    const char* settings_status = "missing-defaults";
+    if (loaded_settings.status == area51xr::SettingsLoadStatus::loaded) settings_status = "loaded";
+    else if (loaded_settings.status == area51xr::SettingsLoadStatus::corrupt) settings_status = "corrupt-defaults";
+    else if (loaded_settings.status == area51xr::SettingsLoadStatus::outdated) settings_status = "outdated-defaults";
+
     area51xr::OpenXrRuntime runtime;
-    area51xr::XrHost host(runtime, *ipc.state());
+    area51xr::XrHost host(runtime, *ipc.state(), {}, true, loaded_settings.settings);
     if (!host.initialize()) {
         std::cerr << "OpenXR initialization failed: " << runtime.last_error() << std::endl;
         return 5;
     }
+
+    std::cout << "player_data=%LOCALAPPDATA%\\Area51XR"
+              << " settings=" << settings_status << std::endl;
+    const char* passthrough_extension = runtime.passthrough_extension();
+    std::cout << "passthrough_extension="
+              << (passthrough_extension && *passthrough_extension ? passthrough_extension : "none")
+              << " passthrough="
+              << (runtime.passthrough_state() == area51xr::PassthroughState::unavailable ? "unavailable" :
+                  (runtime.passthrough_state() == area51xr::PassthroughState::on ? "on" : "off"))
+              << std::endl;
 
     std::cout << "OpenXR bridge initialized. Waiting for runtime session and MAME frames." << std::endl;
     std::uint64_t last_frame = 0;
@@ -119,6 +138,19 @@ int run_xr_bridge() {
         }
         if (tick.restart_requested) std::cout << "menu_action=restart" << std::endl;
         if (tick.quit_requested) std::cout << "menu_action=quit" << std::endl;
+        if (tick.passthrough_toggle_failed)
+            std::cerr << "warning=passthrough_enable_failed state=unavailable" << std::endl;
+        if (tick.settings_changed) {
+            if (!settings_store.save(host.settings()))
+                std::cerr << "warning=settings_save_failed" << std::endl;
+            else
+                std::cout << "settings=saved reticle=" << (host.settings().reticle_enabled ? "on" : "off")
+                          << " passthrough_preference=" << (host.settings().passthrough_enabled ? "on" : "off")
+                          << " passthrough_state="
+                          << (runtime.passthrough_state() == area51xr::PassthroughState::on ? "on" :
+                              (runtime.passthrough_state() == area51xr::PassthroughState::off ? "off" : "unavailable"))
+                          << std::endl;
+        }
 
         const bool new_frame = tick.frame.frame_number != 0 && tick.frame.frame_number != last_frame;
         if (new_frame) {
@@ -159,7 +191,7 @@ int run_xr_bridge() {
 
 int main(int argc, char** argv) {
     if (argc == 2 && std::string_view{argv[1]} == "--version") {
-        std::cout << "Area51XR 0.2.0\n";
+        std::cout << "Area51XR 1.1.0-candidate\n";
         return 0;
     }
 

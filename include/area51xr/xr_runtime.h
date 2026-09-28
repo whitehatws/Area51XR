@@ -3,6 +3,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <span>
+#include <vector>
 
 namespace area51xr {
 
@@ -66,6 +67,12 @@ struct VideoFrameView {
     std::span<const std::uint8_t> pixels{};
 };
 
+enum class PassthroughState : std::uint8_t {
+    unavailable,
+    off,
+    on
+};
+
 struct SpatialMeshVertexView {
     Vec3 position{};
     float u{};
@@ -85,6 +92,9 @@ public:
     virtual bool poll(XrInputState& state) = 0;
     virtual bool present(const VideoFrameView& frame) = 0;
     virtual bool present_mesh(const SpatialMeshView& mesh) = 0;
+    [[nodiscard]] virtual PassthroughState passthrough_state() const noexcept = 0;
+    [[nodiscard]] virtual const char* passthrough_extension() const noexcept = 0;
+    virtual bool set_passthrough_enabled(bool enabled) = 0;
     virtual void shutdown() = 0;
 };
 
@@ -96,13 +106,19 @@ public:
     bool poll(XrInputState& state) override;
     bool present(const VideoFrameView& frame) override;
     bool present_mesh(const SpatialMeshView& mesh) override;
+    [[nodiscard]] PassthroughState passthrough_state() const noexcept override;
+    [[nodiscard]] const char* passthrough_extension() const noexcept override;
+    bool set_passthrough_enabled(bool enabled) override;
     void shutdown() override;
 
     void set_state(const XrInputState& state);
+    void set_passthrough_supported(bool supported);
+    void set_passthrough_enable_failure(bool fail);
     [[nodiscard]] std::uint64_t last_presented_frame() const noexcept;
     [[nodiscard]] std::uint64_t last_presented_mesh_frame() const noexcept;
     [[nodiscard]] std::size_t last_presented_mesh_vertices() const noexcept;
     [[nodiscard]] std::size_t last_presented_mesh_triangles() const noexcept;
+    [[nodiscard]] std::span<const std::uint8_t> last_presented_pixels() const noexcept;
 
 private:
     XrInputState state_{};
@@ -110,6 +126,9 @@ private:
     std::uint64_t last_presented_mesh_frame_{};
     std::size_t last_presented_mesh_vertices_{};
     std::size_t last_presented_mesh_triangles_{};
+    std::vector<std::uint8_t> last_presented_pixels_{};
+    PassthroughState passthrough_state_{PassthroughState::unavailable};
+    bool passthrough_enable_failure_{};
     bool initialized_{};
 };
 

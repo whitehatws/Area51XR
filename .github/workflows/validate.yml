@@ -1,0 +1,63 @@
+name: Validate Area51XR
+
+on:
+  push:
+    branches-ignore:
+      - main
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  windows-regressions:
+    runs-on: windows-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+
+      - name: Install pinned MSYS2 toolchain
+        uses: msys2/setup-msys2@66cd2cce69caa17b53920067426061ca1de3a884
+        with:
+          msystem: UCRT64
+          update: true
+          install: >-
+            mingw-w64-ucrt-x86_64-cmake
+            mingw-w64-ucrt-x86_64-gcc
+            mingw-w64-ucrt-x86_64-ninja
+            mingw-w64-ucrt-x86_64-openxr-sdk
+
+      - name: Build Windows OpenXR host
+        shell: msys2 {0}
+        run: >-
+          cmake -S . -B build-ci -G Ninja
+          -DCMAKE_BUILD_TYPE=RelWithDebInfo
+          -DA51XR_OPENXR_SDK=/ucrt64
+          && cmake --build build-ci --parallel
+
+      - name: Run C++ regressions
+        shell: msys2 {0}
+        run: ctest --test-dir build-ci -C RelWithDebInfo --output-on-failure
+
+      - name: Run persistence and media regressions
+        shell: pwsh
+        run: ./scripts/test-player-support.ps1
+
+      - name: Verify OpenXR D3D11 upload contract
+        shell: pwsh
+        run: ./scripts/test-openxr-upload-contract.ps1
+
+      - name: Enforce source media boundary
+        shell: pwsh
+        run: |
+          $forbidden = @(git ls-files | Where-Object {
+            $_ -match '(?i)(^|/)(area51\.zip|area51\.chd|2-c_area_51_(hh\.hh|hl\.hl|lh\.lh|ll\.ll)|jagwave\.rom)$' -or
+            $_ -match '(?i)\.(nv|dif)$' -or
+            $_ -match '(?i)(^|/)settings-v\d+\.ini$'
+          })
+          if ($forbidden.Count -gt 0) {
+            throw "Copyrighted media or player runtime data is tracked: $($forbidden -join ', ')"
+          }
+          Write-Host "Tracked-source media boundary passed."

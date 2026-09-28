@@ -1,0 +1,8 @@
+; Save the CoJag EEPROM score block and its two initialized RAM tables.
+; The EEPROM share padding lanes at 0x474 and 0x4C6 are stable zero sentinels.
+area51:
+; Restore as soon as the game's stable table markers are ready, before its first score-list pass.
+@delay=0.1
+@:maincpu,:nvram/share,474,53,00,00
+@:maincpu,:mainram/share,2B0,5A,01,00
+@:maincpu,:mainram/share,30A,5A,00,00

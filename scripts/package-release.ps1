@@ -1,5 +1,5 @@
 param(
-    [string]$Version = "1.0.0",
+    [string]$Version = "1.1.0-rc1",
     [string]$MameRoot = "",
     [string]$MsysRoot = "C:\msys64",
     [string]$OutputDir = "",
@@ -44,6 +44,10 @@ $mameCommit = (& git -C $MameRoot rev-parse HEAD).Trim()
 if ([string]::IsNullOrWhiteSpace($area51xrCommit) -or [string]::IsNullOrWhiteSpace($mameCommit)) {
     throw "Unable to resolve source revisions for release packaging."
 }
+$requiredMameCommit = "06516a9dc07f68e21092340f04e1a6f6d6a58260"
+if ($mameCommit -ne $requiredMameCommit) {
+    throw "Release packaging requires validated MAME revision $requiredMameCommit, but the source tree is at $mameCommit."
+}
 
 $area51xrStatus = @(& git -C $root status --porcelain)
 if ($area51xrStatus.Count -gt 0 -and -not $AllowDirty) {
@@ -65,12 +69,30 @@ Write-Host "[1/8] Staging release template..."
 Copy-Item (Join-Path $releaseTemplate "*") $stage -Recurse -Force
 $binStage = Join-Path $stage "bin"
 $emulatorStage = Join-Path $stage "emulator"
+$pluginStage = Join-Path $emulatorStage "plugins"
 $licenseStage = Join-Path $stage "licenses"
-New-Item -ItemType Directory -Force -Path $binStage, $emulatorStage, $licenseStage | Out-Null
+New-Item -ItemType Directory -Force -Path $binStage, $emulatorStage, $pluginStage, $licenseStage | Out-Null
 
 Copy-Item $hostExe (Join-Path $binStage "area51xr.exe") -Force
 Copy-Item $loaderDll (Join-Path $binStage "openxr_loader.dll") -Force
 Copy-Item $emulatorExe (Join-Path $emulatorStage "area51xr.exe") -Force
+if (-not (Test-Path (Join-Path $emulatorStage "hiscore.dat"))) {
+    throw "The Area 51 high-score map is missing from the release template."
+}
+foreach ($pluginName in @("hiscore","json")) {
+    $pluginSource = Join-Path $MameRoot "plugins\$pluginName"
+    if (-not (Test-Path (Join-Path $pluginSource "plugin.json"))) {
+        throw "Required MAME plugin '$pluginName' is missing from $pluginSource."
+    }
+    Copy-Item -LiteralPath $pluginSource -Destination (Join-Path $pluginStage $pluginName) -Recurse -Force
+}
+foreach ($pluginAsset in @("boot.lua","plugin.schema")) {
+    $pluginAssetSource = Join-Path $MameRoot "plugins\$pluginAsset"
+    if (-not (Test-Path $pluginAssetSource)) {
+        throw "Required MAME plugin bootstrap asset is missing: $pluginAssetSource"
+    }
+    Copy-Item -LiteralPath $pluginAssetSource -Destination (Join-Path $pluginStage $pluginAsset) -Force
+}
 
 function Get-ImportedDllNames([string]$ExePath) {
     $lines = & $objdump -p $ExePath 2>$null
@@ -170,7 +192,9 @@ $bannedNames = @(
     'jagwave.rom'
 )
 $forbidden = @(Get-ChildItem -Path $stage -Recurse -File | Where-Object {
-    $_.Extension -ieq '.chd' -or $bannedNames -contains $_.Name.ToLowerInvariant()
+    $_.Extension -in @('.chd','.nv','.dif') -or
+    $_.Name -like 'settings-v*.ini' -or
+    $bannedNames -contains $_.Name.ToLowerInvariant()
 })
 if ($forbidden.Count -gt 0) {
     $names = ($forbidden.FullName -join [Environment]::NewLine)

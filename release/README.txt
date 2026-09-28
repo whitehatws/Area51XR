@@ -13,7 +13,7 @@ QUICK START
 
    Play Area51XR.cmd
 
-The launcher verifies the game media before starting.
+The launcher verifies the game media before starting. If valid media filenames differ, Area51XR can recognize the supported files by exact content signatures and stage canonical copies without renaming or modifying the originals.
 
 VR CONNECTION OPTIONS
 ---------------------
@@ -47,7 +47,35 @@ Aim outside screen + fire  Reload
 Y or B                     Insert Coin
 X or A                     Start / Continue
 Either thumbstick click    Open / close pause menu
-Pause menu                  Resume / Restart Game / Quit Area51XR
+Pause menu                  Resume / toggles / Restart Game / Quit Area51XR
+
+PAUSE MENU
+----------
+
+Resume
+Reticle: Off / On (defaults to Off)
+Passthrough: Off / On / Unavailable (defaults to Off)
+Restart Game
+Quit Area51XR
+
+The pause-menu pointer is always available. The optional gameplay reticle appears only while aiming at the game screen. Passthrough requires support from the active OpenXR runtime.
+
+PERSISTENT LOCAL DATA
+---------------------
+
+The original Area 51 scoreboard, initials, military ranks, and cabinet data are preserved under:
+
+  %LOCALAPPDATA%\Area51XR\mame
+
+Player preferences are stored in:
+
+  %LOCALAPPDATA%\Area51XR\settings-v1.ini
+
+Session logs are stored in:
+
+  %LOCALAPPDATA%\Area51XR\logs
+
+Restart Game preserves the native high-score table. Area51XR backs up and migrates v1.0 install-local MAME data when it is found. To back up scores, close Area51XR and copy the mame folder above. To reset scores, close Area51XR and remove only its mame\nvram and mame\diff folders after making any desired backup.
 
 Keyboard fallback:
 
@@ -82,7 +110,7 @@ If the headset does not connect:
 - Confirm the headset is already connected through Meta Horizon Link, Steam Link/SteamVR, or Virtual Desktop.
 - Confirm that connection method exposes a working OpenXR runtime on the PC.
 - Try the matching -Runtime option shown above.
-- Review the newest folder under logs\ for runtime and emulator diagnostics.
+- Review the newest folder under %LOCALAPPDATA%\Area51XR\logs for runtime and emulator diagnostics.
 
 If the game media fails verification, confirm that your Area 51 ROM set and CHD match the emulator version bundled with this release.
 
