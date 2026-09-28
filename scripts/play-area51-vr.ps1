@@ -27,6 +27,10 @@ foreach ($required in @($RomPath, $MameRoot, $resolver, $preparePlay, $support))
 
 Import-Module $support -Force
 $playerData = Initialize-Area51XRPlayerData -LegacyRoots @($MameRoot,$root)
+$hiscoreMigration = Repair-Area51XRHiscoreProfile -DataRoot $playerData.Root
+if ($hiscoreMigration.Migrated) {
+    Write-Host "Migrated the old Area 51 score cache and backed it up to: $($hiscoreMigration.BackupPath)"
+}
 $env:A51XR_DATA_ROOT = $playerData.Root
 
 if (-not $SkipBuild) {
@@ -55,6 +59,16 @@ if (-not $mameExe) {
 if (-not $mameExe) {
     throw "Patched Area51XR MAME executable was not found."
 }
+$runtimeDir = Join-Path $root "release\emulator"
+$hiscoreMap = Join-Path $runtimeDir "hiscore.dat"
+$pluginRoot = Join-Path $MameRoot "plugins"
+$mameHome = Join-Path $playerData.Root "mame"
+$snapshotDir = Join-Path $mameHome "snap"
+foreach ($required in @($runtimeDir,$hiscoreMap,(Join-Path $pluginRoot "boot.lua"),(Join-Path $pluginRoot "hiscore\plugin.json"),(Join-Path $pluginRoot "json\plugin.json"))) {
+    if (-not (Test-Path $required)) {
+        throw "Area51XR score persistence support is incomplete. Missing: $required"
+    }
+}
 
 $resolvedOutput = @(& $resolver -RomPath $RomPath)
 $mediaPath = $env:A51XR_MAME_MEDIA_PATH
@@ -76,18 +90,26 @@ $runtimeLog = Join-Path $logDir "openxr-runtime.txt"
 $vdxrLogCopy = Join-Path $logDir "vdxr-openxr.log"
 
 $persistentArgs = @(
+    "-homepath", $mameHome,
     "-nvram_directory", $playerData.Nvram,
     "-diff_directory", $playerData.Diff,
     "-cfg_directory", $playerData.Cfg,
-    "-input_directory", $playerData.Input
+    "-input_directory", $playerData.Input,
+    "-snapshot_directory", $snapshotDir,
+    "-pluginspath", $pluginRoot,
+    "-plugins",
+    "-plugin", "hiscore"
 )
 $persistenceConfig = @(& $mameExe @persistentArgs -showconfig 2>&1)
 if ($LASTEXITCODE -ne 0) { throw "MAME could not report its effective persistence configuration." }
 $persistenceText = $persistenceConfig -join [Environment]::NewLine
-foreach ($requiredPath in @($playerData.Nvram,$playerData.Diff,$playerData.Cfg,$playerData.Input)) {
+foreach ($requiredPath in @($mameHome,$playerData.Nvram,$playerData.Diff,$playerData.Cfg,$playerData.Input,$snapshotDir,$pluginRoot)) {
     if ($persistenceText.IndexOf($requiredPath,[System.StringComparison]::OrdinalIgnoreCase) -lt 0) {
         throw "MAME did not accept the requested persistent player-data directories."
     }
+}
+if ($persistenceText -notmatch '(?m)^plugins\s+1\s*$' -or $persistenceText -notmatch '(?m)^plugin\s+hiscore\s*$') {
+    throw "MAME did not enable the Area 51 high-score persistence plugin."
 }
 $persistenceConfig | Set-Content -Path (Join-Path $logDir "mame-persistence-config.txt") -Encoding UTF8
 
@@ -97,6 +119,7 @@ $runtimeLines.Add("Host: $hostExe")
 $runtimeLines.Add("MAME: $mameExe")
 $runtimeLines.Add("Media: $mediaPath")
 $runtimeLines.Add("Persistent game data: %LOCALAPPDATA%\Area51XR\mame")
+$runtimeLines.Add("High-score table map: $hiscoreMap")
 $runtimeLines.Add("Runtime preference: $Runtime")
 
 $activeRuntimeManifests = New-Object System.Collections.Generic.List[string]
@@ -196,7 +219,12 @@ function Add-VdxrRuntimes {
 }
 
 function Add-MetaLinkRuntimes {
-    Add-RuntimeCandidate "MetaLink" "C:\Program Files\Oculus\Support\oculus-runtime\oculus_openxr_64.json" 2
+    foreach ($metaRuntimeRoot in @(
+        (Join-Path $env:ProgramFiles "Meta Horizon\Support\oculus-runtime"),
+        (Join-Path $env:ProgramFiles "Oculus\Support\oculus-runtime")
+    )) {
+        Add-RuntimeCandidate "MetaLink" (Join-Path $metaRuntimeRoot "oculus_openxr_64.json") 2
+    }
 }
 
 function Add-SteamVrRuntimes {
@@ -446,19 +474,20 @@ try {
         "-verbose"
     )
     $mameProcess = Start-Process -FilePath $mameExe -ArgumentList $mameArgs -PassThru `
-        -WorkingDirectory (Split-Path -Parent $mameExe) `
+        -WorkingDirectory $runtimeDir `
         -RedirectStandardOutput $mameOut -RedirectStandardError $mameErr
 
     Write-Host ""
     Write-Host "AREA51XR PLAY MODE STARTED"
     Write-Host "OpenXR runtime: $($selectedRuntime.Name)"
     Write-Host "MAME low-latency mode: enabled"
+    Write-Host "CoJag NVRAM directory: $($playerData.Nvram)"
     Write-Host "Left or right controller: aim + trigger. Point outside the game screen and pull trigger to reload."
     Write-Host "Quest Y or B: insert coin"
     Write-Host "Quest X or A: start / continue"
     Write-Host "Keyboard fallback: 5 = coin, 1 = Player 1 start."
     Write-Host "Leave this PowerShell window open while playing."
-    Write-Host "Press Ctrl+C here, or exit MAME, to stop the session."
+    Write-Host "Exit MAME, or press Ctrl+C here to request a normal game exit."
     Write-Host "Logs: $logDir"
 
     $reportedSession = $false
@@ -510,7 +539,15 @@ try {
 }
 finally {
     if ($mameProcess -and -not $mameProcess.HasExited) {
-        Stop-Process -Id $mameProcess.Id -Force -ErrorAction SilentlyContinue
+        Write-Host "Requesting a normal MAME exit so cabinet data can be saved..."
+        $closeRequested = $false
+        try { $closeRequested = $mameProcess.CloseMainWindow() } catch { }
+        if ($closeRequested) {
+            $null = $mameProcess.WaitForExit(15000)
+        }
+        if (-not $mameProcess.HasExited) {
+            Write-Warning "MAME is still running, so it was left open instead of being force-stopped. Close it from its own window to preserve cabinet data."
+        }
     }
     if ($hostProcess -and -not $hostProcess.HasExited) {
         Stop-Process -Id $hostProcess.Id -Force -ErrorAction SilentlyContinue

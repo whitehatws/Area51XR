@@ -27,6 +27,43 @@ try {
     $after = (Get-FileHash (Join-Path $again.Nvram "area51\area51.nv") -Algorithm SHA256).Hash
     if ($before -ne $after) { throw "Persistent score data changed across relaunch simulation" }
 
+    # Upgrade an existing plugin cache without replacing a newer native EEPROM image.
+    $scoreCacheDir = Join-Path $data.Root "mame\hiscore"
+    $nativeDir = Join-Path $data.Root "mame\nvram\area51"
+    New-Item -ItemType Directory -Force -Path $scoreCacheDir,$nativeDir | Out-Null
+    $cachePath = Join-Path $scoreCacheDir "area51.hi"
+    $nativePath = Join-Path $nativeDir "nvram"
+    [byte[]]$oldCache = [byte[]]::new(257)
+    for ($i=0; $i -lt 257; $i++) { $oldCache[$i] = [byte](($i + 13) % 256) }
+    [byte[]]$native = [byte[]]::new(8192)
+    for ($i=0; $i -lt 8192; $i++) { $native[$i] = [byte](($i + 47) % 256) }
+    [System.IO.File]::WriteAllBytes($cachePath,$oldCache)
+    [System.IO.File]::WriteAllBytes($nativePath,$native)
+    $nativeHash = (Get-FileHash $nativePath -Algorithm SHA256).Hash
+    $repair = Repair-Area51XRHiscoreProfile -DataRoot $data.Root
+    if (-not $repair.Migrated -or $repair.PreviousLength -ne 257 -or
+        $repair.CurrentLength -ne 263 -or -not $repair.UsedNativeNvram) {
+        throw "Existing high-score cache was not migrated from native NVRAM"
+    }
+    [byte[]]$upgraded = [System.IO.File]::ReadAllBytes($cachePath)
+    [byte[]]$backup = [System.IO.File]::ReadAllBytes($repair.BackupPath)
+    if ($backup.Length -ne $oldCache.Length) { throw "Legacy high-score backup length changed" }
+    for ($i=0; $i -lt $oldCache.Length; $i++) {
+        if ($backup[$i] -ne $oldCache[$i]) { throw "Legacy high-score backup changed" }
+    }
+    for ($i=0; $i -lt 83; $i++) {
+        if ($upgraded[$i] -ne $native[(0x474 + $i) -bxor 3]) { throw "Native EEPROM score byte changed during cache migration" }
+    }
+    for ($i=0; $i -lt 180; $i++) {
+        if ($upgraded[83 + $i] -ne $oldCache[77 + $i]) { throw "Legacy RAM table changed during cache migration" }
+    }
+    if ((Get-FileHash $nativePath -Algorithm SHA256).Hash -ne $nativeHash) { throw "Native NVRAM was modified by cache migration" }
+    $cacheHash = (Get-FileHash $cachePath -Algorithm SHA256).Hash
+    if ((Repair-Area51XRHiscoreProfile -DataRoot $data.Root).Migrated -or
+        (Get-FileHash $cachePath -Algorithm SHA256).Hash -ne $cacheHash) {
+        throw "High-score cache migration is not idempotent"
+    }
+
     $media = Join-Path $testRoot "renamed-media"
     New-Item -ItemType Directory -Force -Path $media | Out-Null
     $manifest = New-Object System.Collections.Generic.List[object]

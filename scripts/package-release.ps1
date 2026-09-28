@@ -69,12 +69,30 @@ Write-Host "[1/8] Staging release template..."
 Copy-Item (Join-Path $releaseTemplate "*") $stage -Recurse -Force
 $binStage = Join-Path $stage "bin"
 $emulatorStage = Join-Path $stage "emulator"
+$pluginStage = Join-Path $emulatorStage "plugins"
 $licenseStage = Join-Path $stage "licenses"
-New-Item -ItemType Directory -Force -Path $binStage, $emulatorStage, $licenseStage | Out-Null
+New-Item -ItemType Directory -Force -Path $binStage, $emulatorStage, $pluginStage, $licenseStage | Out-Null
 
 Copy-Item $hostExe (Join-Path $binStage "area51xr.exe") -Force
 Copy-Item $loaderDll (Join-Path $binStage "openxr_loader.dll") -Force
 Copy-Item $emulatorExe (Join-Path $emulatorStage "area51xr.exe") -Force
+if (-not (Test-Path (Join-Path $emulatorStage "hiscore.dat"))) {
+    throw "The Area 51 high-score map is missing from the release template."
+}
+foreach ($pluginName in @("hiscore","json")) {
+    $pluginSource = Join-Path $MameRoot "plugins\$pluginName"
+    if (-not (Test-Path (Join-Path $pluginSource "plugin.json"))) {
+        throw "Required MAME plugin '$pluginName' is missing from $pluginSource."
+    }
+    Copy-Item -LiteralPath $pluginSource -Destination (Join-Path $pluginStage $pluginName) -Recurse -Force
+}
+foreach ($pluginAsset in @("boot.lua","plugin.schema")) {
+    $pluginAssetSource = Join-Path $MameRoot "plugins\$pluginAsset"
+    if (-not (Test-Path $pluginAssetSource)) {
+        throw "Required MAME plugin bootstrap asset is missing: $pluginAssetSource"
+    }
+    Copy-Item -LiteralPath $pluginAssetSource -Destination (Join-Path $pluginStage $pluginAsset) -Force
+}
 
 function Get-ImportedDllNames([string]$ExePath) {
     $lines = & $objdump -p $ExePath 2>$null

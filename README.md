@@ -43,7 +43,7 @@ The published v1.0.0 release is the stable production baseline. The v1.1.0 candi
 - In-headset pause, resume, restart, and quit menu
 - Custom **FORTYDUBZ PRESENTS** startup screen
 - Restart returns through the Fortydubz splash
-- Original in-game high scores, initials, and military ranks persist locally
+- The original in-game scoreboard persists locally; full-relaunch persistence passed a Quest 3/VDXR headset check
 - Optional gameplay reticle, Off by default
 - Capability-detected OpenXR passthrough, Off by default
 - Content-signature recognition for valid renamed media files
@@ -89,7 +89,7 @@ Starting or continuing normally consumes one arcade credit.
 
 | Headset | Connection | OpenXR runtime | Status |
 |---|---|---|---|
-| Meta Quest 3 | Virtual Desktop | VDXR | v1.0 hardware validated; v1.1 gameplay and reticle toggling reported working; passthrough unavailable |
+| Meta Quest 3 | Virtual Desktop | VDXR | v1.0 hardware validated; v1.1 gameplay, reticle toggling, and full-relaunch scoreboard persistence confirmed; passthrough unavailable |
 | Meta Quest 3 | Virtual Desktop | SteamVR | v1.0 hardware validated; v1.1 retest pending |
 | Meta Quest 2 | Meta Horizon Link | Not recorded | Community report of smooth v1.0 gameplay ([Reddit](https://www.reddit.com/r/OculusQuest/comments/1w8kbln/comment/p88hn4a/)) |
 | Meta Quest 3 | Meta Horizon Link or Air Link | Meta OpenXR (not tested) | Not yet hardware validated for Area51XR |
@@ -97,7 +97,7 @@ Starting or continuing normally consumes one arcade credit.
 
 VDXR is the primary known-good runtime. SteamVR has also completed the full gameplay test through Virtual Desktop.
 
-The Quest 3 v1.0 rows are maintainer tests. The Reddit report is for Quest 2 and v1.0 only; it does not validate Quest 3 Link/Air Link or v1.1 passthrough. In the latest reported v1.1 Quest 3/VDXR run, gameplay and reticle toggling worked, while passthrough read **Unavailable** because VDXR exposed neither supported extension. v1.1 preference and score-persistence behavior have automated coverage, but native scoreboard survival through headset restart and full relaunch has not yet been manually checked. The current candidate supports `XR_FB_passthrough` and `XR_HTC_passthrough` when the active runtime advertises and successfully initializes one of them. Otherwise the menu reports **Passthrough: Unavailable** without interrupting gameplay.
+The Quest 3 v1.0 rows are maintainer tests. The Reddit report is for Quest 2 and v1.0 only; it does not validate Quest 3 Link/Air Link or v1.1 passthrough. In the latest reported v1.1 Quest 3/VDXR run, gameplay and reticle toggling worked, while passthrough read **Unavailable** because VDXR exposed neither supported extension. Native scoreboard persistence passed a Quest 3 headset full-relaunch check: GPT remained at number seven without a new score. Persistence after the in-menu Restart Game action is still unverified. The current candidate supports `XR_FB_passthrough` and `XR_HTC_passthrough` when the active runtime advertises and successfully initializes one of them. Otherwise the menu reports **Passthrough: Unavailable** without interrupting gameplay.
 
 ## How it works
 
@@ -159,6 +159,7 @@ Player data is stored outside the extracted player folder:
 | Data | Location |
 |---|---|
 | MAME NVRAM and native scores | `%LOCALAPPDATA%\Area51XR\mame\nvram` |
+| High-score plugin cache | `%LOCALAPPDATA%\Area51XR\mame\hiscore` |
 | Writable CHD differences | `%LOCALAPPDATA%\Area51XR\mame\diff` |
 | MAME configuration and input data | `%LOCALAPPDATA%\Area51XR\mame\cfg` and `input` |
 | Reticle and passthrough preferences | `%LOCALAPPDATA%\Area51XR\settings-v1.ini` |
@@ -167,7 +168,7 @@ Player data is stored outside the extracted player folder:
 
 Pause, Resume, and Restart Game do not clear persistent cabinet data. A one-time migration checks v1.0 install-local MAME folders. Existing files are backed up before missing data is copied into the stable per-user location.
 
-To back up scores, close Area51XR and copy `%LOCALAPPDATA%\Area51XR\mame`. To reset the local scoreboard, close Area51XR, make a backup if desired, then remove only the `nvram` and `diff` folders under that location. The next launch creates clean native cabinet data.
+To back up scores, close Area51XR and copy `%LOCALAPPDATA%\Area51XR\mame`. To reset the local scoreboard, close Area51XR, back up that folder, then remove the `nvram\area51\nvram` file and `hiscore\area51.hi` file under it. The next launch creates clean cabinet data. Keep the `diff` directory, which holds writable game media changes.
 
 ## Runtime selection
 

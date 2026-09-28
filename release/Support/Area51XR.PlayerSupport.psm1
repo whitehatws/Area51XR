@@ -86,6 +86,67 @@ function Initialize-Area51XRPlayerData {
     return [pscustomobject]$paths
 }
 
+function Repair-Area51XRHiscoreProfile {
+    param([Parameter(Mandatory=$true)][string]$DataRoot)
+
+    $mameRoot = Join-Path ([System.IO.Path]::GetFullPath($DataRoot)) "mame"
+    $hiscoreFile = Join-Path $mameRoot "hiscore\area51.hi"
+    if (-not (Test-Path -LiteralPath $hiscoreFile -PathType Leaf)) {
+        return [pscustomobject]@{ Migrated=$false; Reason="No existing Area 51 high-score file." }
+    }
+
+    [byte[]]$legacy = [System.IO.File]::ReadAllBytes($hiscoreFile)
+    if ($legacy.Length -eq 263) {
+        return [pscustomobject]@{ Migrated=$false; Reason="High-score file already uses the stable EEPROM map." }
+    }
+    if ($legacy.Length -notin @(180,257)) {
+        throw "Cannot safely migrate Area 51 high-score file with unexpected length $($legacy.Length) bytes. The file was preserved at '$hiscoreFile'."
+    }
+
+    $nvramFile = Join-Path $mameRoot "nvram\area51\nvram"
+    [byte[]]$nvram = $null
+    if (Test-Path -LiteralPath $nvramFile -PathType Leaf) {
+        [byte[]]$candidate = [System.IO.File]::ReadAllBytes($nvramFile)
+        if ($candidate.Length -eq 8192) { $nvram = $candidate }
+    }
+
+    [byte[]]$migrated = [byte[]]::new(263)
+    if ($null -ne $nvram) {
+        # MAME's big-endian share exposes each NVRAM dword in reversed byte-lane order.
+        # Pull the current native EEPROM bytes so an old cache cannot roll back newer scores.
+        for ($i=0; $i -lt 83; $i++) {
+            $logicalAddress = 0x474 + $i
+            $physicalOffset = [int]($logicalAddress -bxor 3)
+            $migrated[$i] = $nvram[$physicalOffset]
+        }
+    }
+    elseif ($legacy.Length -eq 257) {
+        # Preserve the old EEPROM cache when no native NVRAM image exists yet.
+        [Array]::Copy($legacy,0,$migrated,3,77)
+    }
+
+    $legacyRamOffset = if ($legacy.Length -eq 257) { 77 } else { 0 }
+    [Array]::Copy($legacy,$legacyRamOffset,$migrated,83,180)
+
+    $backupDirectory = Join-Path $mameRoot "hiscore-backups"
+    New-Item -ItemType Directory -Force -Path $backupDirectory | Out-Null
+    $stamp = Get-Date -Format "yyyyMMdd-HHmmss-fff"
+    $backupFile = Join-Path $backupDirectory "area51-legacy-$($legacy.Length)-bytes-$stamp.hi"
+    Copy-Item -LiteralPath $hiscoreFile -Destination $backupFile
+
+    $temporaryFile = "$hiscoreFile.migrating"
+    [System.IO.File]::WriteAllBytes($temporaryFile,$migrated)
+    Move-Item -LiteralPath $temporaryFile -Destination $hiscoreFile -Force
+    return [pscustomobject]@{
+        Migrated=$true
+        ProfilePath=$hiscoreFile
+        BackupPath=$backupFile
+        PreviousLength=$legacy.Length
+        CurrentLength=$migrated.Length
+        UsedNativeNvram=($null -ne $nvram)
+    }
+}
+
 function Get-Area51MediaManifest {
     return @(
         [pscustomobject]@{ Name="2-c_area_51_hh.hh"; Kind="rom"; Size=524288L; Sha1="69da54ed6886e825156bbcc256e8d7abd4dc1ff8" },
@@ -258,4 +319,4 @@ function Resolve-Area51Media {
     return $stageRoot
 }
 
-Export-ModuleMember -Function Get-Area51XRDataRoot,Initialize-Area51XRPlayerData,Get-Area51MediaManifest,ConvertTo-LowerHex,Get-ChdLogicalSha1,Test-Area51CanonicalMedia,Get-Area51MediaCandidates,Resolve-Area51Media
+Export-ModuleMember -Function Get-Area51XRDataRoot,Initialize-Area51XRPlayerData,Repair-Area51XRHiscoreProfile,Get-Area51MediaManifest,ConvertTo-LowerHex,Get-ChdLogicalSha1,Test-Area51CanonicalMedia,Get-Area51MediaCandidates,Resolve-Area51Media

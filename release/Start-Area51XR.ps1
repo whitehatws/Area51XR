@@ -8,6 +8,9 @@ $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent $MyInvocation.MyCommand.Path
 $hostExe = Join-Path $root "bin\area51xr.exe"
 $emulatorExe = Join-Path $root "emulator\area51xr.exe"
+$emulatorRoot = Join-Path $root "emulator"
+$hiscoreMap = Join-Path $emulatorRoot "hiscore.dat"
+$pluginRoot = Join-Path $emulatorRoot "plugins"
 $binDir = Join-Path $root "bin"
 $defaultMedia = Join-Path $root "media"
 $support = Join-Path $root "Support\Area51XR.PlayerSupport.psm1"
@@ -15,6 +18,12 @@ $support = Join-Path $root "Support\Area51XR.PlayerSupport.psm1"
 if (-not (Test-Path $support)) { throw "Area51XR installation is incomplete. Missing: $support" }
 Import-Module $support -Force
 $playerData = Initialize-Area51XRPlayerData -LegacyRoots @((Join-Path $root "emulator"),$root)
+$hiscoreMigration = Repair-Area51XRHiscoreProfile -DataRoot $playerData.Root
+if ($hiscoreMigration.Migrated) {
+    Write-Host "Migrated the old Area 51 score cache and backed it up to: $($hiscoreMigration.BackupPath)"
+}
+$mameHome = Join-Path $playerData.Root "mame"
+$snapshotDir = Join-Path $mameHome "snap"
 $env:A51XR_DATA_ROOT = $playerData.Root
 $logRoot = Join-Path $playerData.Root "logs"
 
@@ -23,7 +32,7 @@ if ([string]::IsNullOrWhiteSpace($RomPath)) {
 }
 $RomPath = [System.IO.Path]::GetFullPath($RomPath)
 
-foreach ($required in @($hostExe, $emulatorExe, $binDir)) {
+foreach ($required in @($hostExe, $emulatorExe, $binDir, $hiscoreMap,(Join-Path $pluginRoot "boot.lua"),(Join-Path $pluginRoot "hiscore\plugin.json"),(Join-Path $pluginRoot "json\plugin.json"))) {
     if (-not (Test-Path $required)) {
         throw "Area51XR installation is incomplete. Missing: $required"
     }
@@ -68,18 +77,26 @@ $vdxrLogCopy = Join-Path $logDir "vdxr-openxr.log"
 
 Write-Host "Verifying Area 51 media..."
 $persistentArgs = @(
+    "-homepath", $mameHome,
     "-nvram_directory", $playerData.Nvram,
     "-diff_directory", $playerData.Diff,
     "-cfg_directory", $playerData.Cfg,
-    "-input_directory", $playerData.Input
+    "-input_directory", $playerData.Input,
+    "-snapshot_directory", $snapshotDir,
+    "-pluginspath", $pluginRoot,
+    "-plugins",
+    "-plugin", "hiscore"
 )
 $persistenceConfig = @(& $emulatorExe @persistentArgs -showconfig 2>&1)
 if ($LASTEXITCODE -ne 0) { throw "MAME could not report its effective persistence configuration." }
 $persistenceText = $persistenceConfig -join [Environment]::NewLine
-foreach ($requiredPath in @($playerData.Nvram,$playerData.Diff,$playerData.Cfg,$playerData.Input)) {
+foreach ($requiredPath in @($mameHome,$playerData.Nvram,$playerData.Diff,$playerData.Cfg,$playerData.Input,$snapshotDir,$pluginRoot)) {
     if ($persistenceText.IndexOf($requiredPath,[System.StringComparison]::OrdinalIgnoreCase) -lt 0) {
         throw "MAME did not accept the requested persistent player-data directories."
     }
+}
+if ($persistenceText -notmatch '(?m)^plugins\s+1\s*$' -or $persistenceText -notmatch '(?m)^plugin\s+hiscore\s*$') {
+    throw "MAME did not enable the Area 51 high-score persistence plugin."
 }
 $persistenceConfig | Set-Content -Path (Join-Path $logDir "mame-persistence-config.txt") -Encoding UTF8
 $auditOutput = @(& $emulatorExe -rompath $RomPath @persistentArgs -verifyroms area51 2>&1)
@@ -372,11 +389,8 @@ try {
 
     $emulatorArgs = @(
         "area51",
-        "-rompath", $RomPath,
-        "-nvram_directory", $playerData.Nvram,
-        "-diff_directory", $playerData.Diff,
-        "-cfg_directory", $playerData.Cfg,
-        "-input_directory", $playerData.Input,
+        "-rompath", $RomPath
+    ) + $persistentArgs + @(
         "-window",
         "-skip_gameinfo",
         "-lowlatency",
@@ -389,6 +403,7 @@ try {
     Write-Host ""
     Write-Host "AREA51XR STARTED" -ForegroundColor Green
     Write-Host "Runtime: $($selectedRuntime.Name)"
+    Write-Host "CoJag NVRAM directory: $($playerData.Nvram)"
     Write-Host "Either trigger: fire / select menu item"
     Write-Host "Aim outside screen + trigger: reload"
     Write-Host "Y or B: insert coin"

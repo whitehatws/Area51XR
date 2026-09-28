@@ -1,12 +1,12 @@
 # Area51XR 1.1.0 release notes
 
-Status: hardware acceptance candidate. The latest user-reported Quest 3/VDXR run completed gameplay and reticle-toggle checks. Manual scoreboard persistence and a v1.1 SteamVR retest remain open. Meta Link passthrough is deferred because the Link desktop client did not appear on the current PC after two official install attempts and restarts. Do not merge, tag, or publish while the remaining checks are open.
+Status: Quest 3/VDXR high-score persistence passed a full-relaunch headset check: GPT remained at number seven without a new high score. Persistence after the in-menu Restart Game action and the v1.1 SteamVR retest remain open. Meta Link passthrough is deferred because the Link desktop client did not appear on the current PC after two official install attempts and restarts. Do not merge, tag, or publish while the remaining checks are open.
 
 The first VDXR hardware passes exposed a compositor failure when presentation changed from the 640x360 startup splash to the 320x240 live game frame. The candidate now uses one stable 320x240 presentation surface for the splash, live game, pause menu, and restart splash. It also retains any resolution-specific OpenXR swapchain until session shutdown. In the latest user-reported v1.1 VDXR run, gameplay and reticle toggling worked; passthrough remained unavailable because the runtime did not expose a supported extension.
 
 ## Added
 
-- Native local Area 51 high scores, initials, military ranks, and cabinet data now persist through pause, restart, full exit, relaunch, and newly extracted player versions.
+- The game uses its native local NVRAM for Area 51 scores and cabinet data. The MAME map now checks stable EEPROM padding lanes, preserves current NVRAM while migrating the old cache, and loads from 0.1 seconds once the game's readiness markers pass. This restores initials before the game builds its first score list. A copied-profile trace saw the saved GPT record in that first read, and the user confirmed GPT at number seven in the headset after a full relaunch without a new score. The exact score and streak values were not independently confirmed.
 - MAME NVRAM, writable CHD differences, configuration, and input data are stored under `%LOCALAPPDATA%\Area51XR\mame`.
 - Existing v1.0 install-local player data is backed up and migrated once when found.
 - A gameplay reticle can be toggled from the pause menu. It defaults to Off, follows the active controller's actual game-screen intersection, and never changes MAME aim coordinates.
@@ -38,7 +38,7 @@ VDXR and SteamVR are validated for v1.0 gameplay on Quest 3. A Reddit user also 
 - Session logs: `%LOCALAPPDATA%\Area51XR\logs`
 - Automatic migration backups: `%LOCALAPPDATA%\Area51XR\Backups`
 
-To back up local scores, close Area51XR and copy `%LOCALAPPDATA%\Area51XR\mame`. To reset scores, close Area51XR, back up that folder if desired, then remove only `%LOCALAPPDATA%\Area51XR\mame\nvram` and `%LOCALAPPDATA%\Area51XR\mame\diff`. MAME will create clean cabinet data on the next launch.
+To back up local scores, close Area51XR and copy `%LOCALAPPDATA%\Area51XR\mame`. A scoreboard reset requires removing both the native `nvram\area51\nvram` file and the plugin's `hiscore\area51.hi` cache after making a backup. Leave the writable CHD `diff` directory intact.
 
 ## Media boundary
 
